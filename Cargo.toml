@@ -10,6 +10,11 @@ license = "MIT OR Apache-2.0 OR Zlib"
 keywords = []
 categories = []
 
+[dependencies]
+bitflags = "1"
+futures-intrusive = "0.3"
+parking_lot = "0.10"
+
 [profile.release]
 debug = false
 lto = "thin"
