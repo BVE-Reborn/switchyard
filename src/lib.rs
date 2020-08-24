@@ -7,8 +7,11 @@
 #![deny(intra_doc_link_resolution_failure)]
 
 use bitflags::bitflags;
-use futures_intrusive::{channel::shared::OneshotReceiver, sync::ManualResetEvent};
-use parking_lot::{Mutex, RwLock, RwLockWriteGuard};
+use futures_intrusive::{
+    channel::shared::{oneshot_channel, ChannelReceiveFuture},
+    sync::ManualResetEvent,
+};
+use parking_lot::{Mutex, RawMutex, RwLock, RwLockWriteGuard};
 use std::{
     collections::VecDeque,
     future::Future,
@@ -103,15 +106,15 @@ struct Queues<TD> {
 
 enum Job<TD> {
     Future(Pin<Box<dyn Future<Output = ()> + Send + Sync>>),
-    Local(Box<dyn FnOnce(TD) -> Pin<Box<dyn Future<Output = ()>>>>),
+    Local(Box<dyn for<'v> FnOnce(&'v TD) -> Pin<Box<dyn Future<Output = ()> + 'v>>>),
 }
 
-pub type JoinHandle<T> = OneshotReceiver<T>;
+pub type JoinHandle<T> = ChannelReceiveFuture<RawMutex, T>;
 
 pub struct Runtime<TD> {
     count: RwLock<AtomicUsize>,
     queue: Arc<Queues<TD>>,
-    idle_waiters: Arc<ManualResetEvent>,
+    idle_wait: Arc<ManualResetEvent>,
     thread_local_data: Vec<*mut TD>,
 }
 impl<TD> Runtime<TD> {
@@ -121,24 +124,36 @@ impl<TD> Runtime<TD> {
 
     pub fn spawn<Fut, T>(&self, priority: Priority, fut: Fut) -> JoinHandle<T>
     where
-        Fut: Future<Output = T>,
-        T: Send,
+        Fut: Future<Output = T> + Send + Sync + 'static,
+        T: Send + 'static,
     {
-        unimplemented!()
+        let (sender, receiver) = oneshot_channel();
+        let job = Job::Future(Box::pin(async move {
+            sender.send(fut.await);
+        }));
+        self.queue.inner[priority as usize].lock().push_back(job);
+        receiver.receive()
     }
 
-    pub fn spawn_data<Func, Fut, T>(&self, priority: Priority, async_fn: Func) -> JoinHandle<T>
+    pub fn spawn_local<Func, Fut, T>(&self, priority: Priority, async_fn: Func) -> JoinHandle<T>
     where
-        Func: FnOnce(&TD) -> Fut + Send,
+        Func: FnOnce(&TD) -> Fut + Send + 'static,
         Fut: Future<Output = T>,
-        T: Send,
+        T: Send + 'static,
     {
-        unimplemented!()
+        let (sender, receiver) = oneshot_channel();
+        let job = Job::Local(Box::new(move |td| {
+            Box::pin(async move {
+                sender.send(async_fn(td).await);
+            })
+        }));
+        self.queue.inner[priority as usize].lock().push_back(job);
+        receiver.receive()
     }
 
     pub async fn wait_for_idle(&self) {
-        self.idle_waiters.wait().await;
-        self.idle_waiters.reset();
+        self.idle_wait.wait().await;
+        self.idle_wait.reset();
     }
 
     pub fn queued_jobs(&self) -> usize {
