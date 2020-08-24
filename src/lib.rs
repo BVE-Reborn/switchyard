@@ -1,5 +1,11 @@
 //! Real time compute focused async executor.
 
+#![deny(future_incompatible)]
+#![deny(nonstandard_style)]
+#![deny(rust_2018_idioms)]
+// Rustdoc Warnings
+#![deny(intra_doc_link_resolution_failure)]
+
 use bitflags::bitflags;
 use futures_intrusive::{channel::shared::OneshotReceiver, sync::ManualResetEvent};
 use parking_lot::{Mutex, RwLock, RwLockWriteGuard};
@@ -139,7 +145,7 @@ impl<TD> Runtime<TD> {
         self.count.read().load(Ordering::Relaxed)
     }
 
-    pub fn access_per_thread_data(&self) -> Option<PerThreadDataGuard<TD>>
+    pub fn access_per_thread_data(&self) -> Option<PerThreadDataGuard<'_, TD>>
     where
         TD: Send,
     {
