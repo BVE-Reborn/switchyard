@@ -11,10 +11,11 @@ use futures_intrusive::{
     channel::shared::{oneshot_channel, ChannelReceiveFuture},
     sync::ManualResetEvent,
 };
+use futures_task::ArcWake;
 use parking_lot::{Condvar, Mutex, RawMutex};
 use priority_queue::PriorityQueue;
 use std::sync::atomic::AtomicBool;
-use std::task::{Context, RawWaker, Waker};
+use std::task::Context;
 use std::{
     future::Future,
     hash::{Hash, Hasher},
@@ -58,7 +59,7 @@ pub struct ThreadAllocationOutput {
 }
 
 enum Job<TD> {
-    Future(Pin<Box<dyn Future<Output = ()> + Send + Sync>>),
+    Future(Pin<Box<dyn Future<Output = ()> + Send>>),
     Local(Box<dyn for<'v> FnOnce(&'v TD) -> Pin<Box<dyn Future<Output = ()> + 'v>> + Send>),
 }
 
@@ -295,14 +296,59 @@ where
                 let job: Job<TD> = job;
                 let priority: Priority = priority;
 
-                let raw_waker = waker_fn::waker_fn();
-                let mut context = Context::from_waker(&waker);
-
                 match job {
-                    Job::Future(mut future) => future.as_mut().poll(&mut context),
-                    Job::Local(mut func) => func(&thread_locals).as_mut().poll(&mut context),
+                    Job::Future(future) => {
+                        let task = Task::new(Arc::clone(&shared), future, thread_info.pool, priority);
+                        task.poll();
+                    }
+                    Job::Local(mut func) => {
+                        unimplemented!();
+                        // func(&thread_locals).as_mut().poll(&mut context)
+                    }
                 };
             }
+        }
+    }
+}
+
+struct Task<TD> {
+    shared: Arc<Shared<TD>>,
+    future: Mutex<Option<Pin<Box<dyn Future<Output = ()> + Send>>>>,
+    pool: Pool,
+    priority: Priority,
+}
+impl<TD> Task<TD> {
+    fn new(
+        shared: Arc<Shared<TD>>,
+        future: Pin<Box<dyn Future<Output = ()> + Send>>,
+        pool: Pool,
+        priority: Priority,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            shared,
+            future: Mutex::new(Some(future)),
+            pool,
+            priority,
+        })
+    }
+
+    fn poll(self: Arc<Self>) {
+        let waker = futures_task::waker(Arc::clone(&self));
+        let mut ctx = Context::from_waker(&waker);
+
+        let mut guard = self.future.lock();
+
+        let _ = guard.as_mut().unwrap().as_mut().poll(&mut ctx);
+    }
+}
+
+impl<TD> ArcWake for Task<TD> {
+    fn wake_by_ref(arc_self: &Arc<Self>) {
+        let mut guard = arc_self.future.lock();
+        if let Some(fut) = guard.take() {
+            let queue: &Queue<TD> = &arc_self.shared.queues[arc_self.pool as usize];
+            queue.inner.lock().push(Job::Future(fut), arc_self.priority);
+            queue.cond_var.notify_one();
         }
     }
 }
