@@ -10,6 +10,7 @@ use std::{
     task::{Context, Poll},
 };
 
+#[allow(clippy::type_complexity)]
 pub(crate) enum Job<TD> {
     Future(Arc<Task<TD>>),
     Local(Box<dyn FnOnce(Rc<TD>) -> Pin<Box<dyn Future<Output = ()>>> + Send>),

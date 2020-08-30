@@ -16,7 +16,7 @@ pub(crate) fn body<TD, TDFunc>(
     thread_info: ThreadAllocationOutput,
     thread_local_sender: std::sync::mpsc::Sender<ThreadLocalPointer<TD>>,
     thread_local_creator: Arc<TDFunc>,
-) -> impl FnOnce() -> () + Send + 'static
+) -> impl FnOnce()
 where
     TD: 'static,
     TDFunc: Fn() -> TD + Send + Sync + 'static,
