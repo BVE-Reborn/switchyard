@@ -6,25 +6,31 @@
 // Rustdoc Warnings
 #![deny(intra_doc_link_resolution_failure)]
 
+use crate::{
+    task::{Job, Task, ThreadLocalTask},
+    threads::{ThreadAllocationInput, ThreadAllocationOutput},
+    util::ThreadLocalPointer,
+};
 use arrayvec::ArrayVec;
 use futures_intrusive::{
     channel::shared::{oneshot_channel, ChannelReceiveFuture},
     sync::ManualResetEvent,
 };
-use futures_task::ArcWake;
 use parking_lot::{Condvar, Mutex, RawMutex};
 use priority_queue::PriorityQueue;
-use std::sync::atomic::AtomicBool;
-use std::task::Context;
 use std::{
     future::Future,
-    hash::{Hash, Hasher},
-    pin::Pin,
+    rc::Rc,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
+    thread::Thread,
 };
+
+mod task;
+pub mod threads;
+mod util;
 
 const MAX_POOLS: u8 = 8;
 
@@ -34,60 +40,7 @@ pub type PoolCount = u8;
 
 pub type JoinHandle<T> = ChannelReceiveFuture<RawMutex, T>;
 
-pub struct ThreadAllocation<'a> {
-    pub name: &'a mut dyn FnMut(&ThreadAllocationOutput) -> Option<String>,
-    pub allocator: &'a mut dyn FnMut(ThreadAllocationInput) -> Vec<ThreadAllocationOutput>,
-}
-
-/// Information about threads on the system
-// TODO: Detect and expose big.LITTLE
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ThreadAllocationInput {
-    pub physical: usize,
-    pub logical: usize,
-}
-
-/// Spawn information for a worker thread.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ThreadAllocationOutput {
-    /// Identifier.
-    pub ident: usize,
-    /// Job pool that the thread services.
-    pub pool: Pool,
-    /// Core index to pin thread to.
-    pub affinity: Option<usize>,
-}
-
-enum Job<TD> {
-    Future(Pin<Box<dyn Future<Output = ()> + Send>>),
-    Local(Box<dyn for<'v> FnOnce(&'v TD) -> Pin<Box<dyn Future<Output = ()> + 'v>> + Send>),
-}
-
-impl<TD> Job<TD> {
-    fn to_address(&self) -> usize {
-        // SAFETY: These addresses are `Pin`, and we won't be removing them from their boxes, so this
-        // should be valid to use for ParitalEq and Hash.
-        match self {
-            Self::Future(fut) => &**fut as *const _ as *const () as usize,
-            Self::Local(func) => &**func as *const _ as *const () as usize,
-        }
-    }
-}
-
-impl<TD> PartialEq for Job<TD> {
-    fn eq(&self, other: &Self) -> bool {
-        self.to_address() == other.to_address()
-    }
-}
-
-impl<TD> Eq for Job<TD> {}
-
-impl<TD> Hash for Job<TD> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_usize(self.to_address());
-    }
-}
-
+type ThreadLocalQueue<TD> = Mutex<PriorityQueue<Arc<ThreadLocalTask<TD>>, u32>>;
 struct Queue<TD> {
     inner: Mutex<PriorityQueue<Job<TD>, u32>>,
     cond_var: Condvar,
@@ -103,10 +56,15 @@ struct Shared<TD> {
 pub struct Runtime<TD> {
     shared: Arc<Shared<TD>>,
     idle_wait: Arc<ManualResetEvent>,
+    threads: Vec<std::thread::JoinHandle<()>>,
     thread_local_data: Vec<*mut TD>,
 }
 impl<TD: 'static> Runtime<TD> {
-    pub fn new<TDFunc>(max_pools: Pool, allocation: ThreadAllocation<'_>, data_creation: TDFunc) -> Self
+    pub fn new<TDFunc>(
+        max_pools: Pool,
+        allocation: impl IntoIterator<Item = ThreadAllocationOutput>,
+        data_creation: TDFunc,
+    ) -> Self
     where
         TDFunc: Fn() -> TD + Send + Sync + 'static,
     {
@@ -116,13 +74,6 @@ impl<TD: 'static> Runtime<TD> {
             logical: num_cpus::get(),
             physical: num_cpus::get_physical(),
         };
-
-        let threads_info: Vec<ThreadAllocationOutput> = (allocation.allocator)(input_data);
-        let thread_count = threads_info.len();
-        let threads_info_iter = threads_info.into_iter().map(|v| {
-            let name = (allocation.name)(&v);
-            (v, name)
-        });
 
         let (sender, thread_local_receiver) = std::sync::mpsc::channel();
 
@@ -139,21 +90,24 @@ impl<TD: 'static> Runtime<TD> {
             death_signal: AtomicBool::new(false),
         });
 
-        for (thread_info, name) in threads_info_iter {
+        let mut threads = Vec::with_capacity(allocation.size_hint().1.unwrap_or_else(0));
+        for mut thread_info in allocation {
             let builder = std::thread::Builder::new();
-            let builder = if let Some(name) = name {
+            let builder = if let Some(name) = thread_info.name.take() {
                 builder.name(name)
             } else {
                 builder
             };
-            builder
-                .spawn(worker_thread_work::<TD, TDFunc>(
-                    Arc::clone(&shared),
-                    thread_info,
-                    sender.clone(),
-                    data_creation_arc.clone(),
-                ))
-                .unwrap_or_else(|_| panic!("Could not spawn thread"));
+            threads.push(
+                builder
+                    .spawn(worker_thread_work::<TD, TDFunc>(
+                        Arc::clone(&shared),
+                        thread_info,
+                        sender.clone(),
+                        data_creation_arc.clone(),
+                    ))
+                    .unwrap_or_else(|_| panic!("Could not spawn thread")),
+            );
         }
 
         let mut thread_local_data = Vec::with_capacity(thread_count);
@@ -162,6 +116,7 @@ impl<TD: 'static> Runtime<TD> {
         }
 
         Self {
+            threads,
             shared,
             idle_wait: Arc::new(ManualResetEvent::new(false)),
             thread_local_data,
@@ -180,9 +135,14 @@ impl<TD: 'static> Runtime<TD> {
         self.shared.count.fetch_add(1, Ordering::AcqRel);
 
         let (sender, receiver) = oneshot_channel();
-        let job = Job::Future(Box::pin(async move {
-            sender.send(fut.await).unwrap_or_else(|_| panic!("Could not send data"));
-        }));
+        let job = Job::Future(Task::new(
+            Arc::clone(&self.shared),
+            async move {
+                sender.send(fut.await).unwrap_or_else(|_| panic!("Could not send data"));
+            },
+            pool,
+            priority,
+        ));
 
         let queue: &Queue<TD> = &self.shared.queues[pool as usize];
         queue.inner.lock().push(job, priority);
@@ -207,7 +167,7 @@ impl<TD: 'static> Runtime<TD> {
         let job = Job::Local(Box::new(move |td| {
             Box::pin(async move {
                 sender
-                    .send(async_fn(td).await)
+                    .send(async_fn(&td).await)
                     .unwrap_or_else(|_| panic!("Could not send data"));
             })
         }));
@@ -250,15 +210,26 @@ impl<TD: 'static> Runtime<TD> {
 
         Some(data)
     }
+
+    /// Kill all threads as soon as they come idle. All jobs submitted after this point
+    /// will not run.
+    pub fn finish(&mut self) {
+        self.shared.death_signal.store(true, Ordering::Release);
+        self.thread_local_data.empty();
+        for thread in self.threads.drain(..) {
+            thread.join();
+        }
+    }
+}
+
+impl<TD> Drop for Runtime<TD> {
+    fn drop(&mut self) {
+        self.finish()
+    }
 }
 
 unsafe impl<TD> Send for Runtime<TD> {}
 unsafe impl<TD> Sync for Runtime<TD> {}
-
-struct ThreadLocalPointer<TD>(*mut TD);
-
-unsafe impl<TD> Send for ThreadLocalPointer<TD> {}
-unsafe impl<TD> Sync for ThreadLocalPointer<TD> {}
 
 fn worker_thread_work<TD, TDFunc>(
     shared: Arc<Shared<TD>>,
@@ -271,11 +242,13 @@ where
     TDFunc: Fn() -> TD + Send + Sync + 'static,
 {
     move || {
-        let mut thread_locals: TD = thread_local_creator();
+        let thread_locals: Rc<TD> = Rc::new(thread_local_creator());
+        let thread_local_ptr = &*thread_locals as *const _ as *mut _;
+        let thread_queue = Arc::new(ThreadLocalQueue::new(PriorityQueue::new()));
 
         // Send thead local address
         thread_local_sender
-            .send(ThreadLocalPointer(&mut thread_locals as *mut _))
+            .send(ThreadLocalPointer(thread_local_ptr))
             .unwrap_or_else(|_| panic!("Could not send data"));
         // Drop sender so receiver will stop waiting
         drop(thread_local_sender);
@@ -290,65 +263,31 @@ where
                 }
             }
 
-            if let Some((job, priority)) = guard.pop() {
+            if let Some((job, queue_priority)) = guard.pop() {
                 drop(guard);
 
                 let job: Job<TD> = job;
-                let priority: Priority = priority;
 
                 match job {
-                    Job::Future(future) => {
-                        let task = Task::new(Arc::clone(&shared), future, thread_info.pool, priority);
+                    Job::Future(task) => {
+                        debug_assert_eq!(task.priority, queue_priority);
                         task.poll();
                     }
-                    Job::Local(mut func) => {
-                        unimplemented!();
-                        // func(&thread_locals).as_mut().poll(&mut context)
+                    Job::Local(func) => {
+                        // SAFETY: This reference will only be read in this thread,
+                        // and this thread's stack stores all data for the thread.
+                        let fut = func(Rc::clone(&thread_locals));
+                        let task = ThreadLocalTask::new(
+                            Arc::clone(&shared),
+                            Arc::clone(&thread_queue),
+                            fut,
+                            thread_info.pool,
+                            queue_priority,
+                        );
+                        unsafe { task.poll() };
                     }
                 };
             }
-        }
-    }
-}
-
-struct Task<TD> {
-    shared: Arc<Shared<TD>>,
-    future: Mutex<Option<Pin<Box<dyn Future<Output = ()> + Send>>>>,
-    pool: Pool,
-    priority: Priority,
-}
-impl<TD> Task<TD> {
-    fn new(
-        shared: Arc<Shared<TD>>,
-        future: Pin<Box<dyn Future<Output = ()> + Send>>,
-        pool: Pool,
-        priority: Priority,
-    ) -> Arc<Self> {
-        Arc::new(Self {
-            shared,
-            future: Mutex::new(Some(future)),
-            pool,
-            priority,
-        })
-    }
-
-    fn poll(self: Arc<Self>) {
-        let waker = futures_task::waker(Arc::clone(&self));
-        let mut ctx = Context::from_waker(&waker);
-
-        let mut guard = self.future.lock();
-
-        let _ = guard.as_mut().unwrap().as_mut().poll(&mut ctx);
-    }
-}
-
-impl<TD> ArcWake for Task<TD> {
-    fn wake_by_ref(arc_self: &Arc<Self>) {
-        let mut guard = arc_self.future.lock();
-        if let Some(fut) = guard.take() {
-            let queue: &Queue<TD> = &arc_self.shared.queues[arc_self.pool as usize];
-            queue.inner.lock().push(Job::Future(fut), arc_self.priority);
-            queue.cond_var.notify_one();
         }
     }
 }
