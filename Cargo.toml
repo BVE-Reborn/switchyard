@@ -19,6 +19,9 @@ num_cpus = "1"
 parking_lot = "0.10"
 priority-queue = "1"
 
+[dev-dependencies]
+futures-executor = "0.3"
+
 [profile.release]
 debug = false
 lto = "thin"

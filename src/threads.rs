@@ -28,6 +28,18 @@ pub fn thread_info() -> ThreadAllocationInput {
     }
 }
 
+pub fn single_pool_single_thread(
+    thread_name: Option<String>,
+    affinity: Option<usize>,
+) -> impl Iterator<Item = ThreadAllocationOutput> {
+    std::iter::once(ThreadAllocationOutput {
+        name: thread_name,
+        ident: 0,
+        pool: 0,
+        affinity,
+    })
+}
+
 /// Creates a single pool jobs with index 0.
 /// One thread per logical core.
 /// Each thread assigned to a different core.
