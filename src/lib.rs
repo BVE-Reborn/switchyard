@@ -22,6 +22,7 @@ use priority_queue::PriorityQueue;
 use std::{
     future::Future,
     pin::Pin,
+    rc::Rc,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
@@ -167,7 +168,7 @@ impl<TD: 'static> Runtime<TD> {
 
     pub fn spawn_local<Func, Fut, T>(&self, pool: Pool, priority: Priority, mut async_fn: Func) -> JoinHandle<T>
     where
-        Func: FnMut(&TD) -> Fut + Send + 'static,
+        Func: FnMut(Rc<TD>) -> Fut + Send + 'static,
         Fut: Future<Output = T>,
         T: Send + 'static,
     {
@@ -181,7 +182,7 @@ impl<TD: 'static> Runtime<TD> {
         let job = Job::Local(Box::new(move |td| {
             Box::pin(async move {
                 sender
-                    .send(async_fn(&td).await)
+                    .send(async_fn(td).await)
                     .unwrap_or_else(|_| panic!("Could not send data"));
             })
         }));
