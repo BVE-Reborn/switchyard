@@ -4,6 +4,7 @@ use crate::{
     util::ThreadLocalPointer,
     Queue, Shared, ThreadLocalQueue,
 };
+use futures_task::Poll;
 use priority_queue::PriorityQueue;
 use std::{
     rc::Rc,
@@ -34,23 +35,45 @@ where
 
         loop {
             let queue: &Queue<TD> = &shared.queues[thread_info.pool as usize];
-            let mut guard = queue.inner.lock();
-            if guard.is_empty() {
-                queue.cond_var.wait(&mut guard);
+            let mut global_guard = queue.inner.lock();
+            let local_guard = thread_queue.lock();
+            if global_guard.is_empty() && local_guard.is_empty() {
+                drop(local_guard);
+                queue.cond_var.wait(&mut global_guard);
                 if shared.death_signal.load(Ordering::Acquire) {
                     break;
                 }
             }
+            drop(global_guard);
 
-            if let Some((job, queue_priority)) = guard.pop() {
-                drop(guard);
+            // First try the local queue
+            let mut local_guard = thread_queue.lock();
+            if let Some((task, _)) = local_guard.pop() {
+                drop(local_guard);
+
+                let task: Arc<ThreadLocalTask<TD>> = task;
+
+                if let Poll::Ready(()) = unsafe { task.poll() } {
+                    shared.count.fetch_sub(1, Ordering::AcqRel);
+                }
+                continue;
+            } else {
+                drop(local_guard);
+            }
+
+            // Then the global one
+            let mut global_guard = queue.inner.lock();
+            if let Some((job, queue_priority)) = global_guard.pop() {
+                drop(global_guard);
 
                 let job: Job<TD> = job;
 
                 match job {
                     Job::Future(task) => {
                         debug_assert_eq!(task.priority, queue_priority);
-                        task.poll();
+                        if let Poll::Ready(()) = task.poll() {
+                            shared.count.fetch_sub(1, Ordering::AcqRel);
+                        }
                     }
                     Job::Local(func) => {
                         // SAFETY: This reference will only be read in this thread,
@@ -63,9 +86,14 @@ where
                             thread_info.pool,
                             queue_priority,
                         );
-                        unsafe { task.poll() };
+                        if let Poll::Ready(()) = unsafe { task.poll() } {
+                            shared.count.fetch_sub(1, Ordering::AcqRel);
+                        }
                     }
                 };
+                continue;
+            } else {
+                drop(global_guard);
             }
         }
     }

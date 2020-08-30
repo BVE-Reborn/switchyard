@@ -7,7 +7,7 @@ use std::{
     pin::Pin,
     rc::Rc,
     sync::Arc,
-    task::Context,
+    task::{Context, Poll},
 };
 
 pub(crate) enum Job<TD> {
@@ -59,7 +59,7 @@ impl<TD> Task<TD> {
         })
     }
 
-    pub fn poll(self: Arc<Self>) {
+    pub fn poll(self: Arc<Self>) -> Poll<()> {
         let waker = futures_task::waker(Arc::clone(&self));
         let mut ctx = Context::from_waker(&waker);
 
@@ -68,7 +68,7 @@ impl<TD> Task<TD> {
         // We can ignore this as the waker will put it back in the queue
         // when needed. If finished, the waker will just be dropped, causing self to be
         // deleted.
-        let _ = guard.as_mut().poll(&mut ctx);
+        guard.as_mut().poll(&mut ctx)
     }
 }
 
@@ -113,7 +113,7 @@ impl<TD> ThreadLocalTask<TD> {
     /// # Safety
     ///
     /// - This function can only be called on the thread that `new` was called on.
-    pub unsafe fn poll(self: Arc<Self>) {
+    pub unsafe fn poll(self: Arc<Self>) -> Poll<()> {
         let waker = futures_task::waker(Arc::clone(&self));
         let mut ctx = Context::from_waker(&waker);
 
@@ -122,7 +122,7 @@ impl<TD> ThreadLocalTask<TD> {
         // We can ignore this as the waker will put it back in the queue
         // when needed. If finished, the waker will just be dropped, causing self to be
         // deleted.
-        let _ = guard.as_mut().poll(&mut ctx);
+        guard.as_mut().poll(&mut ctx)
     }
 }
 
