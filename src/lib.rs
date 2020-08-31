@@ -137,7 +137,7 @@ impl<TD: 'static> Runtime<TD> {
 
     pub fn spawn<Fut, T>(&self, pool: Pool, priority: Priority, fut: Fut) -> JoinHandle<T>
     where
-        Fut: Future<Output = T> + Send + Sync + 'static,
+        Fut: Future<Output = T> + Send + 'static,
         T: Send + 'static,
     {
         assert!((pool as usize) < self.shared.queues.len());
@@ -166,9 +166,9 @@ impl<TD: 'static> Runtime<TD> {
         }
     }
 
-    pub fn spawn_local<Func, Fut, T>(&self, pool: Pool, priority: Priority, mut async_fn: Func) -> JoinHandle<T>
+    pub fn spawn_local<Func, Fut, T>(&self, pool: Pool, priority: Priority, async_fn: Func) -> JoinHandle<T>
     where
-        Func: FnMut(Rc<TD>) -> Fut + Send + 'static,
+        Func: FnOnce(Rc<TD>) -> Fut + Send + 'static,
         Fut: Future<Output = T>,
         T: Send + 'static,
     {
