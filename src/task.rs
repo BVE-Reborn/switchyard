@@ -21,7 +21,7 @@ impl<TD> Job<TD> {
         // SAFETY: These addresses are `Pin`, and we won't be removing them from their boxes, so this
         // should be valid to use for ParitalEq and Hash.
         match self {
-            Self::Future(fut) => &fut.future.lock() as *const _ as *const () as usize,
+            Self::Future(fut) => &*fut.future.lock() as *const _ as *const () as usize,
             Self::Local(func) => &**func as *const _ as *const () as usize,
         }
     }

@@ -43,6 +43,8 @@ where
                 if shared.death_signal.load(Ordering::Acquire) {
                     break;
                 }
+            } else {
+                drop(local_guard)
             }
             drop(global_guard);
 
