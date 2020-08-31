@@ -37,19 +37,19 @@ where
             let queue: &Queue<TD> = &shared.queues[thread_info.pool as usize];
             let mut global_guard = queue.inner.lock();
             let local_guard = thread_queue.lock();
-            if global_guard.is_empty() && local_guard.is_empty() {
+            let mut local_guard = if global_guard.is_empty() && local_guard.is_empty() {
                 drop(local_guard);
                 queue.cond_var.wait(&mut global_guard);
                 if shared.death_signal.load(Ordering::Acquire) {
                     break;
                 }
+                thread_queue.lock()
             } else {
-                drop(local_guard)
-            }
+                local_guard
+            };
             drop(global_guard);
 
             // First try the local queue
-            let mut local_guard = thread_queue.lock();
             if let Some((task, _)) = local_guard.pop() {
                 drop(local_guard);
 

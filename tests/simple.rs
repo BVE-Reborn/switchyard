@@ -7,6 +7,8 @@ fn single_task() {
     let yard = Runtime::new(1, single_pool_single_thread(None, None), || ());
     let handle = yard.spawn(0, 0, async { 12 });
     let result = futures_executor::block_on(handle);
+
+    assert_eq!(yard.queued_jobs(), 0);
     assert_eq!(result, Some(12));
 }
 
@@ -15,6 +17,8 @@ fn single_local_task() {
     let yard = Runtime::new(1, single_pool_single_thread(None, None), || Cell::new(30));
     let handle = yard.spawn_local(0, 0, |value| async move { value.take() + 12 });
     let result = futures_executor::block_on(handle);
+
+    assert_eq!(yard.queued_jobs(), 0);
     assert_eq!(result, Some(42));
 }
 
@@ -41,6 +45,8 @@ fn single_waiting_task() {
     sender2.send(42).unwrap();
 
     let result = futures_executor::block_on(handle);
+
+    assert_eq!(yard.queued_jobs(), 0);
     assert_eq!(result, Some(42));
 }
 
@@ -63,10 +69,15 @@ fn single_local_waiting_task() {
 
     // Wait until the future is running
     receiver1.recv().unwrap();
+
+    assert_eq!(yard.queued_jobs(), 1);
+
     // Send data
     sender2.send(42).unwrap();
 
     let result = futures_executor::block_on(handle);
+
+    assert_eq!(yard.queued_jobs(), 0);
     assert_eq!(result, Some(42));
 }
 
@@ -79,4 +90,6 @@ fn multi_tasks() {
 
     assert_eq!(futures_executor::block_on(task_one), Some(2 * 2));
     assert_eq!(futures_executor::block_on(task_two), Some(4 * 4));
+
+    assert_eq!(yard.queued_jobs(), 0);
 }
