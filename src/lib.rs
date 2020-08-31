@@ -61,14 +61,15 @@ struct Queue<TD> {
 type Queues<TD> = ArrayVec<[Queue<TD>; MAX_POOLS as usize]>;
 
 struct Shared<TD> {
-    count: AtomicUsize,
+    active_threads: AtomicUsize,
+    idle_wait: ManualResetEvent,
+    job_count: AtomicUsize,
     death_signal: AtomicBool,
     queues: Queues<TD>,
 }
 
 pub struct Runtime<TD: 'static> {
     shared: Arc<Shared<TD>>,
-    idle_wait: Arc<ManualResetEvent>,
     threads: Vec<std::thread::JoinHandle<()>>,
     thread_local_data: Vec<*mut TD>,
 }
@@ -86,6 +87,7 @@ impl<TD: 'static> Runtime<TD> {
         let (sender, thread_local_receiver) = std::sync::mpsc::channel();
 
         let data_creation_arc = Arc::new(data_creation);
+        let allocation_vec: Vec<_> = allocation.into_iter().collect();
 
         let shared = Arc::new(Shared {
             queues: (0..max_pools)
@@ -94,14 +96,14 @@ impl<TD: 'static> Runtime<TD> {
                     cond_var: Condvar::new(),
                 })
                 .collect::<Queues<TD>>(),
-            count: AtomicUsize::new(0),
+            active_threads: AtomicUsize::new(allocation_vec.len()),
+            idle_wait: ManualResetEvent::new(false),
+            job_count: AtomicUsize::new(0),
             death_signal: AtomicBool::new(false),
         });
 
-        let allocation_iter = allocation.into_iter();
-
-        let mut threads = Vec::with_capacity(allocation_iter.size_hint().1.unwrap_or(0));
-        for mut thread_info in allocation_iter {
+        let mut threads = Vec::with_capacity(allocation_vec.len());
+        for mut thread_info in allocation_vec {
             let builder = std::thread::Builder::new();
             let builder = if let Some(name) = thread_info.name.take() {
                 builder.name(name)
@@ -130,7 +132,6 @@ impl<TD: 'static> Runtime<TD> {
         Self {
             threads,
             shared,
-            idle_wait: Arc::new(ManualResetEvent::new(false)),
             thread_local_data,
         }
     }
@@ -144,7 +145,7 @@ impl<TD: 'static> Runtime<TD> {
 
         // SAFETY: we must grab and increment this counter so `access_per_thread_data` knows
         // we're in flight.
-        self.shared.count.fetch_add(1, Ordering::AcqRel);
+        self.shared.job_count.fetch_add(1, Ordering::AcqRel);
 
         let (sender, receiver) = oneshot_channel();
         let job = Job::Future(Task::new(
@@ -176,7 +177,7 @@ impl<TD: 'static> Runtime<TD> {
 
         // SAFETY: we must grab and increment this counter so `access_per_thread_data` knows
         // we're in flight.
-        self.shared.count.fetch_add(1, Ordering::AcqRel);
+        self.shared.job_count.fetch_add(1, Ordering::AcqRel);
 
         let (sender, receiver) = oneshot_channel();
         let job = Job::Local(Box::new(move |td| {
@@ -197,20 +198,40 @@ impl<TD: 'static> Runtime<TD> {
         }
     }
 
+    /// Wait until all working threads are starved of work due
+    /// to lack of jobs or all jobs waiting.
+    ///
+    /// # Safety
+    ///
+    /// - This function provides no safety guarantees.
+    /// - Jobs may be added while the future returns.
+    /// - Jobs may be woken while the future returns.
     pub async fn wait_for_idle(&self) {
-        self.idle_wait.wait().await;
-        self.idle_wait.reset();
+        // We don't reset it, threads will reset it when they become active again
+        self.shared.idle_wait.wait().await;
     }
 
-    pub fn queued_jobs(&self) -> usize {
-        self.shared.count.load(Ordering::Relaxed)
+    /// Current amount of jobs in flight.
+    ///
+    /// # Safety
+    ///
+    /// - This function provides no safety guarantees.
+    /// - Jobs may be added after the value is received and before it is returned.
+    pub fn jobs(&self) -> usize {
+        self.shared.job_count.load(Ordering::Relaxed)
     }
 
+    /// Access the per-thread data of each thread. Only available if `TD` is `Send`.
+    ///
+    /// # Safety
+    ///
+    /// - This function guarantees that there exist no other references to this data if `Some` is returned.
+    /// - This function guarantees that `jobs()` is 0 and will stay zero while the returned references are still live.  
     pub fn access_per_thread_data(&mut self) -> Option<Vec<&mut TD>>
     where
         TD: Send,
     {
-        let count = self.shared.count.load(Ordering::Acquire);
+        let count = self.shared.job_count.load(Ordering::Acquire);
 
         // SAFETY: No more jobs can be added because we have an exclusive reference to the runtime.
         if count != 0 {

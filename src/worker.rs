@@ -33,20 +33,48 @@ where
         // Drop sender so receiver will stop waiting
         drop(thread_local_sender);
 
+        let queue: &Queue<TD> = &shared.queues[thread_info.pool as usize];
+
         loop {
-            let queue: &Queue<TD> = &shared.queues[thread_info.pool as usize];
             let mut global_guard = queue.inner.lock();
             let local_guard = thread_queue.lock();
+
             let mut local_guard = if global_guard.is_empty() && local_guard.is_empty() {
+                // release the local guard while we wait
                 drop(local_guard);
-                queue.cond_var.wait(&mut global_guard);
+
+                // signal threads waiting for idle
+                let active_threads = shared.active_threads.fetch_sub(1, Ordering::AcqRel) - 1;
+                if active_threads == 0 {
+                    // all threads are starved, wake up any idle waiters
+                    shared.idle_wait.set();
+                }
+
+                // check if death was requested before
+                // TODO: Examine possible race via the death_signal and condvar with `finish()`
                 if shared.death_signal.load(Ordering::Acquire) {
                     break;
                 }
+
+                // wait for condvar signal
+                queue.cond_var.wait(&mut global_guard);
+
+                // check if death was requested
+                if shared.death_signal.load(Ordering::Acquire) {
+                    break;
+                }
+
+                // this thread is now active
+                shared.active_threads.fetch_add(1, Ordering::AcqRel);
+                // threads waiting for idle should wait
+                shared.idle_wait.reset();
+
+                // relock the local queue
                 thread_queue.lock()
             } else {
                 local_guard
             };
+            // release the global guard for now
             drop(global_guard);
 
             // First try the local queue
@@ -55,8 +83,13 @@ where
 
                 let task: Arc<ThreadLocalTask<TD>> = task;
 
-                if let Poll::Ready(()) = unsafe { task.poll() } {
-                    shared.count.fetch_sub(1, Ordering::AcqRel);
+                if let Poll::Ready(()) = unsafe { Arc::clone(&task).poll() } {
+                    assert_eq!(
+                        Arc::strong_count(&task),
+                        1,
+                        "A future has retained its waker after returning Ready. This is mean."
+                    );
+                    shared.job_count.fetch_sub(1, Ordering::AcqRel);
                 }
                 continue;
             } else {
@@ -73,8 +106,13 @@ where
                 match job {
                     Job::Future(task) => {
                         debug_assert_eq!(task.priority, queue_priority);
-                        if let Poll::Ready(()) = task.poll() {
-                            shared.count.fetch_sub(1, Ordering::AcqRel);
+                        if let Poll::Ready(()) = Arc::clone(&task).poll() {
+                            assert_eq!(
+                                Arc::strong_count(&task),
+                                1,
+                                "A future has retained its waker after returning Ready. This is mean."
+                            );
+                            shared.job_count.fetch_sub(1, Ordering::AcqRel);
                         }
                     }
                     Job::Local(func) => {
@@ -89,7 +127,7 @@ where
                             queue_priority,
                         );
                         if let Poll::Ready(()) = unsafe { task.poll() } {
-                            shared.count.fetch_sub(1, Ordering::AcqRel);
+                            shared.job_count.fetch_sub(1, Ordering::AcqRel);
                         }
                     }
                 };
