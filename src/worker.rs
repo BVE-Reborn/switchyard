@@ -50,12 +50,6 @@ where
                     shared.idle_wait.set();
                 }
 
-                // check if death was requested before
-                // TODO: Examine possible race via the death_signal and condvar with `finish()`
-                if shared.death_signal.load(Ordering::Acquire) {
-                    break;
-                }
-
                 // wait for condvar signal
                 queue.cond_var.wait(&mut global_guard);
 

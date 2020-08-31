@@ -158,8 +158,11 @@ impl<TD: 'static> Runtime<TD> {
         ));
 
         let queue: &Queue<TD> = &self.shared.queues[pool as usize];
-        queue.inner.lock().push(job, priority);
+
+        let mut queue_guard = queue.inner.lock();
+        queue_guard.push(job, priority);
         queue.cond_var.notify_one();
+        drop(queue_guard);
 
         JoinHandle {
             receiver_future: receiver.receive(),
@@ -189,8 +192,11 @@ impl<TD: 'static> Runtime<TD> {
         }));
 
         let queue: &Queue<TD> = &self.shared.queues[pool as usize];
-        queue.inner.lock().push(job, priority);
+
+        let mut queue_guard = queue.inner.lock();
+        queue_guard.push(job, priority);
         queue.cond_var.notify_one();
+        drop(queue_guard);
 
         JoinHandle {
             receiver_future: receiver.receive(),
@@ -256,7 +262,9 @@ impl<TD: 'static> Runtime<TD> {
         // send death signal then wake everyone up
         self.shared.death_signal.store(true, Ordering::Release);
         for queue in &self.shared.queues {
+            let lock = queue.inner.lock();
             queue.cond_var.notify_all();
+            drop(lock);
         }
 
         self.thread_local_data.clear();

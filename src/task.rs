@@ -76,11 +76,11 @@ impl<TD> Task<TD> {
 impl<TD> ArcWake for Task<TD> {
     fn wake_by_ref(arc_self: &Arc<Self>) {
         let queue: &Queue<TD> = &arc_self.shared.queues[arc_self.pool as usize];
-        queue
-            .inner
-            .lock()
-            .push(Job::Future(Arc::clone(arc_self)), arc_self.priority);
+
+        let mut queue_guard = queue.inner.lock();
+        queue_guard.push(Job::Future(Arc::clone(arc_self)), arc_self.priority);
         queue.cond_var.notify_one();
+        drop(queue_guard);
     }
 }
 
