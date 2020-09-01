@@ -6,7 +6,7 @@ use switchyard::{
 
 #[test]
 fn ten_thousand() {
-    let yard = Switchyard::new(1, single_pool_one_to_one(thread_info(), None), || ());
+    let yard = Switchyard::new(1, single_pool_one_to_one(thread_info(), None), || ()).unwrap();
 
     let handles: Vec<_> = (0..10_000)
         .map(|idx| yard.spawn(0, 0, async move { idx * 2 }))

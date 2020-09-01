@@ -30,12 +30,15 @@ use std::{
     },
 };
 
+mod error;
 mod task;
 pub mod threads;
 mod util;
 mod worker;
 
-const MAX_POOLS: u8 = 8;
+pub use error::*;
+
+pub const MAX_POOLS: u8 = 8;
 
 pub type Priority = u32;
 pub type Pool = u8;
@@ -79,23 +82,47 @@ pub struct Switchyard<TD: 'static> {
     thread_local_data: Vec<*mut TD>,
 }
 impl<TD: 'static> Switchyard<TD> {
+    /// Create a new switchyard.
+    ///
+    /// Will create `pool_count` job pools.
+    ///
+    /// For each element in the provided `thread_allocations` iterator, the yard will spawn a worker
+    /// thread with the given settings. Helper functions in [`threads`] can generate these iterators
+    /// for common situations.
+    ///
+    /// `thread_local_data_creation` will be called on each thread to create the thread local
+    /// data accessible by `spawn_local`.
     pub fn new<TDFunc>(
-        max_pools: Pool,
-        allocation: impl IntoIterator<Item = ThreadAllocationOutput>,
-        data_creation: TDFunc,
-    ) -> Self
+        pool_count: Pool,
+        thread_allocations: impl IntoIterator<Item = ThreadAllocationOutput>,
+        thread_local_data_creation: TDFunc,
+    ) -> Result<Self, SwitchyardCreationError>
     where
         TDFunc: Fn() -> TD + Send + Sync + 'static,
     {
-        assert!(max_pools < MAX_POOLS);
+        if pool_count >= MAX_POOLS {
+            return Err(SwitchyardCreationError::TooManyPools {
+                pools_requested: pool_count,
+            });
+        }
 
-        let (sender, thread_local_receiver) = std::sync::mpsc::channel();
+        let (thread_local_sender, thread_local_receiver) = std::sync::mpsc::channel();
 
-        let data_creation_arc = Arc::new(data_creation);
-        let allocation_vec: Vec<_> = allocation.into_iter().collect();
+        let thread_local_data_creation_arc = Arc::new(thread_local_data_creation);
+        let allocation_vec: Vec<_> = thread_allocations.into_iter().collect();
+
+        for (idx, allocation) in allocation_vec.iter().enumerate() {
+            if allocation.pool >= pool_count {
+                return Err(SwitchyardCreationError::InvalidPoolIndex {
+                    thread_idx: idx,
+                    pool_idx: allocation.pool,
+                    total_pools: pool_count,
+                });
+            }
+        }
 
         let shared = Arc::new(Shared {
-            queues: (0..max_pools)
+            queues: (0..pool_count)
                 .map(|_| Queue {
                     waiting: Mutex::new(DenseSlotMap::new()),
                     inner: Mutex::new(PriorityQueue::new()),
@@ -121,30 +148,39 @@ impl<TD: 'static> Switchyard<TD> {
                     .spawn(worker::body::<TD, TDFunc>(
                         Arc::clone(&shared),
                         thread_info,
-                        sender.clone(),
-                        data_creation_arc.clone(),
+                        thread_local_sender.clone(),
+                        thread_local_data_creation_arc.clone(),
                     ))
                     .unwrap_or_else(|_| panic!("Could not spawn thread")),
             );
         }
         // drop the sender we own, so we can retrieve pointers until all senders are dropped
-        drop(sender);
+        drop(thread_local_sender);
 
         let mut thread_local_data = Vec::with_capacity(threads.len());
         while let Ok(ThreadLocalPointer(ptr)) = thread_local_receiver.recv() {
             thread_local_data.push(ptr);
         }
 
-        Self {
+        Ok(Self {
             threads,
             shared,
             thread_local_data,
-        }
+        })
     }
 
     /// Things that must be done every time a task is spawned
     fn spawn_header(&self, pool: Pool) {
-        assert!((pool as usize) < self.shared.queues.len());
+        assert!(
+            !self.shared.death_signal.load(Ordering::Acquire),
+            "finish() has been called on this Switchyard. No more jobs may be added."
+        );
+        assert!(
+            (pool as usize) < self.shared.queues.len(),
+            "pool {} refers to a non-existant pool. Total pools: {}",
+            pool,
+            self.shared.queues.len()
+        );
 
         // SAFETY: we must grab and increment this counter so `access_per_thread_data` knows
         // we're in flight.
@@ -157,6 +193,15 @@ impl<TD: 'static> Switchyard<TD> {
         self.shared.idle_wait.reset();
     }
 
+    /// Spawn a future which can migrate between threads during execution to the given job `pool` at
+    /// the given `priority`.
+    ///
+    /// A higher `priority` will cause the task to be run sooner.
+    ///
+    /// # Panics
+    ///
+    /// - `pool` refers to a non-existent job pool.
+    /// - [`finish`](Switchyard::finish) has been called on the pool.
     pub fn spawn<Fut, T>(&self, pool: Pool, priority: Priority, fut: Fut) -> JoinHandle<T>
     where
         Fut: Future<Output = T> + Send + 'static,
@@ -187,6 +232,18 @@ impl<TD: 'static> Switchyard<TD> {
         }
     }
 
+    /// Spawns an async function which is tied to a single thread during execution to the given job `pool` at
+    /// the given `priority`.
+    ///
+    /// A higher `priority` will cause the task to be run sooner.
+    ///
+    /// The given function will be provided an `Rc` to the thread-local data to create its future with.
+    ///
+    /// The function must be `Send`, but the future returned by that function may be `!Send`.
+    ///
+    /// # Panics
+    ///
+    /// - Panics is `pool` refers to a non-existent job pool.
     pub fn spawn_local<Func, Fut, T>(&self, pool: Pool, priority: Priority, async_fn: Func) -> JoinHandle<T>
     where
         Func: FnOnce(Rc<TD>) -> Fut + Send + 'static,
@@ -269,8 +326,8 @@ impl<TD: 'static> Switchyard<TD> {
         Some(data)
     }
 
-    /// Kill all threads as soon as they come idle. All jobs submitted after this point
-    /// will not run.
+    /// Kill all threads as soon as they come idle. All calls to spawn and spawn_local will
+    /// panic after this function is called.
     ///
     /// This is equivalent to calling drop. Calling this function twice will be a no-op
     /// the second time.
