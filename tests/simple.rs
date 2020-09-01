@@ -1,10 +1,10 @@
 use futures_intrusive::channel::shared::oneshot_channel as oneshot_async;
 use std::{cell::Cell, sync::mpsc::channel as oneshot_sync, time::Duration};
-use switchyard::{threads::single_pool_single_thread, Runtime};
+use switchyard::{threads::single_pool_single_thread, Switchyard};
 
 #[test]
 fn single_task() {
-    let yard = Runtime::new(1, single_pool_single_thread(None, None), || ());
+    let yard = Switchyard::new(1, single_pool_single_thread(None, None), || ());
     let handle = yard.spawn(0, 0, async { 12 });
     let result = futures_executor::block_on(handle);
 
@@ -13,7 +13,7 @@ fn single_task() {
 
 #[test]
 fn single_local_task() {
-    let yard = Runtime::new(1, single_pool_single_thread(None, None), || Cell::new(30));
+    let yard = Switchyard::new(1, single_pool_single_thread(None, None), || Cell::new(30));
     let handle = yard.spawn_local(0, 0, |value| async move { value.take() + 12 });
     let result = futures_executor::block_on(handle);
 
@@ -22,7 +22,7 @@ fn single_local_task() {
 
 #[test]
 fn single_waiting_task() {
-    let yard = Runtime::new(1, single_pool_single_thread(None, None), || ());
+    let yard = Switchyard::new(1, single_pool_single_thread(None, None), || ());
 
     // The design of this test is to only send the value to wait for after we confirm that the
     // future is running, which gives it a very high chance of the await returning Pending
@@ -49,7 +49,7 @@ fn single_waiting_task() {
 
 #[test]
 fn single_local_waiting_task() {
-    let yard = Runtime::new(1, single_pool_single_thread(None, None), || ());
+    let yard = Switchyard::new(1, single_pool_single_thread(None, None), || ());
 
     // The design of this test is to only send the value to wait for after we confirm that the
     // future is running, which gives it a very high chance of the await returning Pending
@@ -79,7 +79,7 @@ fn single_local_waiting_task() {
 
 #[test]
 fn multi_tasks() {
-    let yard = Runtime::new(1, single_pool_single_thread(None, None), || ());
+    let yard = Switchyard::new(1, single_pool_single_thread(None, None), || ());
 
     let task_one = yard.spawn(0, 0, async move { 2 * 2 });
     let task_two = yard.spawn(0, 0, async move { 4 * 4 });
@@ -90,7 +90,7 @@ fn multi_tasks() {
 
 #[test]
 fn wait_for_idle() {
-    let yard = Runtime::new(1, single_pool_single_thread(None, None), || ());
+    let yard = Switchyard::new(1, single_pool_single_thread(None, None), || ());
 
     let (sender, receiver) = oneshot_sync();
     let task = yard.spawn(0, 0, async move {
@@ -108,7 +108,7 @@ fn wait_for_idle() {
 
 #[test]
 fn wait_for_idle_stalled() {
-    let yard = Runtime::new(1, single_pool_single_thread(None, None), || ());
+    let yard = Switchyard::new(1, single_pool_single_thread(None, None), || ());
 
     let (sender, receiver) = oneshot_async();
     let task = yard.spawn(0, 0, async move {
@@ -130,7 +130,7 @@ fn wait_for_idle_stalled() {
 
 #[test]
 fn access_per_thread_data() {
-    let mut yard = Runtime::new(1, single_pool_single_thread(None, None), || Cell::new(12));
+    let mut yard = Switchyard::new(1, single_pool_single_thread(None, None), || Cell::new(12));
 
     assert_eq!(yard.access_per_thread_data(), Some(vec![&mut Cell::new(12)]));
 

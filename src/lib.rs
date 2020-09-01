@@ -73,12 +73,12 @@ struct Shared<TD> {
     queues: Queues<TD>,
 }
 
-pub struct Runtime<TD: 'static> {
+pub struct Switchyard<TD: 'static> {
     shared: Arc<Shared<TD>>,
     threads: Vec<std::thread::JoinHandle<()>>,
     thread_local_data: Vec<*mut TD>,
 }
-impl<TD: 'static> Runtime<TD> {
+impl<TD: 'static> Switchyard<TD> {
     pub fn new<TDFunc>(
         max_pools: Pool,
         allocation: impl IntoIterator<Item = ThreadAllocationOutput>,
@@ -252,13 +252,13 @@ impl<TD: 'static> Runtime<TD> {
     {
         let count = self.shared.job_count.load(Ordering::Acquire);
 
-        // SAFETY: No more jobs can be added because we have an exclusive reference to the runtime.
+        // SAFETY: No more jobs can be added because we have an exclusive reference to the yard.
         if count != 0 {
             return None;
         }
 
         // SAFETY:
-        //  - We know there are no jobs running because `count` is zero and we have an exclusive reference to the runtime.
+        //  - We know there are no jobs running because `count` is zero and we have an exclusive reference to the yard.
         //  - Threads do not hold any reference to their thread local data unless they are running jobs.
         //  - All threads have yielded waiting for jobs, and no jobs can be added, so this cannot change.
         //  - We are allowed to deref this from another thread as `TD` is `Send`.
@@ -287,11 +287,11 @@ impl<TD: 'static> Runtime<TD> {
     }
 }
 
-impl<TD: 'static> Drop for Runtime<TD> {
+impl<TD: 'static> Drop for Switchyard<TD> {
     fn drop(&mut self) {
         self.finish()
     }
 }
 
-unsafe impl<TD> Send for Runtime<TD> {}
-unsafe impl<TD> Sync for Runtime<TD> {}
+unsafe impl<TD> Send for Switchyard<TD> {}
+unsafe impl<TD> Sync for Switchyard<TD> {}
