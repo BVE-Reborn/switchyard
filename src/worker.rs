@@ -36,6 +36,7 @@ where
         let queue: &Queue<TD> = &shared.queues[thread_info.pool as usize];
 
         loop {
+            // Always grab global -> local
             let mut global_guard = queue.inner.lock();
             let local_guard = thread_queue.lock();
 
@@ -69,7 +70,8 @@ where
                 // threads waiting for idle should wait
                 shared.idle_wait.reset();
 
-                // relock the local queue
+                // re-lock the local queue
+                // this is okay because we already have global
                 thread_queue.lock()
             } else {
                 local_guard

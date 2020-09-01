@@ -129,10 +129,17 @@ impl<TD> ThreadLocalTask<TD> {
 
 impl<TD> ArcWake for ThreadLocalTask<TD> {
     fn wake_by_ref(arc_self: &Arc<Self>) {
-        let cond_var = &arc_self.shared.queues[arc_self.pool as usize].cond_var;
-        let mut queue = arc_self.return_queue.lock();
-        queue.push(Arc::clone(arc_self), arc_self.priority);
-        cond_var.notify_one();
+        let global_queue: &Queue<TD> = &arc_self.shared.queues[arc_self.pool as usize];
+
+        // Always grab global -> local
+
+        // Lock global mutex for condvar
+        let global_guard = global_queue.inner.lock();
+        // Lock local mutex for modification
+        let mut local_guard = arc_self.return_queue.lock();
+        local_guard.push(Arc::clone(arc_self), arc_self.priority);
+        global_queue.cond_var.notify_one();
+        drop(global_guard);
     }
 }
 
