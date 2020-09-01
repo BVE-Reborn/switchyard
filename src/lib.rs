@@ -7,7 +7,7 @@
 #![deny(intra_doc_link_resolution_failure)]
 
 use crate::{
-    task::{Job, Task, ThreadLocalTask},
+    task::{Job, Task, ThreadLocalJob, ThreadLocalTask},
     threads::ThreadAllocationOutput,
     util::ThreadLocalPointer,
 };
@@ -19,6 +19,7 @@ use futures_intrusive::{
 use futures_task::{Context, Poll};
 use parking_lot::{Condvar, Mutex, RawMutex};
 use priority_queue::PriorityQueue;
+use slotmap::{DefaultKey, DenseSlotMap};
 use std::{
     future::Future,
     pin::Pin,
@@ -53,8 +54,12 @@ impl<T: 'static> Future for JoinHandle<T> {
     }
 }
 
-type ThreadLocalQueue<TD> = Mutex<PriorityQueue<Arc<ThreadLocalTask<TD>>, u32>>;
+struct ThreadLocalQueue<TD> {
+    waiting: Mutex<DenseSlotMap<DefaultKey, Arc<ThreadLocalTask<TD>>>>,
+    inner: Mutex<PriorityQueue<ThreadLocalJob, u32>>,
+}
 struct Queue<TD> {
+    waiting: Mutex<DenseSlotMap<DefaultKey, Arc<Task<TD>>>>,
     inner: Mutex<PriorityQueue<Job<TD>, u32>>,
     cond_var: Condvar,
 }
@@ -92,6 +97,7 @@ impl<TD: 'static> Runtime<TD> {
         let shared = Arc::new(Shared {
             queues: (0..max_pools)
                 .map(|_| Queue {
+                    waiting: Mutex::new(DenseSlotMap::new()),
                     inner: Mutex::new(PriorityQueue::new()),
                     cond_var: Condvar::new(),
                 })

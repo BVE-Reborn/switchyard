@@ -1,11 +1,13 @@
 use crate::{
-    task::{Job, ThreadLocalTask},
+    task::{Job, ThreadLocalJob, ThreadLocalTask},
     threads::ThreadAllocationOutput,
     util::ThreadLocalPointer,
     Queue, Shared, ThreadLocalQueue,
 };
 use futures_task::Poll;
+use parking_lot::Mutex;
 use priority_queue::PriorityQueue;
+use slotmap::DenseSlotMap;
 use std::{
     rc::Rc,
     sync::{atomic::Ordering, Arc},
@@ -24,7 +26,10 @@ where
     move || {
         let thread_locals: Rc<TD> = Rc::new(thread_local_creator());
         let thread_local_ptr = &*thread_locals as *const _ as *mut _;
-        let thread_queue = Arc::new(ThreadLocalQueue::new(PriorityQueue::new()));
+        let thread_queue = Arc::new(ThreadLocalQueue {
+            waiting: Mutex::new(DenseSlotMap::new()),
+            inner: Mutex::new(PriorityQueue::new()),
+        });
 
         // Send thead local address
         thread_local_sender
@@ -38,7 +43,7 @@ where
         loop {
             // Always grab global -> local
             let mut global_guard = queue.inner.lock();
-            let local_guard = thread_queue.lock();
+            let local_guard = thread_queue.inner.lock();
 
             let mut local_guard = if global_guard.is_empty() && local_guard.is_empty() {
                 // release the local guard while we wait
@@ -56,7 +61,6 @@ where
                     break;
                 }
 
-                // TODO: there's a race between this and `finish` causing threads not to finish. Occurs when running all threads at once.
                 // wait for condvar signal
                 queue.cond_var.wait(&mut global_guard);
 
@@ -72,7 +76,7 @@ where
 
                 // re-lock the local queue
                 // this is okay because we already have global
-                thread_queue.lock()
+                thread_queue.inner.lock()
             } else {
                 local_guard
             };
@@ -80,19 +84,27 @@ where
             drop(global_guard);
 
             // First try the local queue
-            if let Some((task, _)) = local_guard.pop() {
+            if let Some((job, _)) = local_guard.pop() {
                 drop(local_guard);
 
-                let task: Arc<ThreadLocalTask<TD>> = task;
+                let job: ThreadLocalJob = job;
 
-                if let Poll::Ready(()) = unsafe { Arc::clone(&task).poll() } {
-                    assert_eq!(
-                        Arc::strong_count(&task),
-                        1,
-                        "A future has retained its waker after returning Ready. This is mean."
-                    );
+                let poll_result = match job {
+                    ThreadLocalJob::Resume(key) => {
+                        let mut slot_guard = thread_queue.waiting.lock();
+                        if let Some(task) = slot_guard.remove(key) {
+                            drop(slot_guard);
+                            Some(unsafe { task.poll() })
+                        } else {
+                            None
+                        }
+                    }
+                };
+
+                if let Some(Poll::Ready(())) = poll_result {
                     shared.job_count.fetch_sub(1, Ordering::AcqRel);
                 }
+
                 continue;
             } else {
                 drop(local_guard);
@@ -106,6 +118,20 @@ where
                 let job: Job<TD> = job;
 
                 match job {
+                    Job::Resume(key) => {
+                        let mut slot_guard = queue.waiting.lock();
+                        if let Some(task) = slot_guard.remove(key) {
+                            drop(slot_guard);
+                            if let Poll::Ready(()) = Arc::clone(&task).poll() {
+                                assert_eq!(
+                                    Arc::strong_count(&task),
+                                    1,
+                                    "A future has retained its waker after returning Ready. This is mean."
+                                );
+                                shared.job_count.fetch_sub(1, Ordering::AcqRel);
+                            }
+                        }
+                    }
                     Job::Future(task) => {
                         debug_assert_eq!(task.priority, queue_priority);
                         if let Poll::Ready(()) = Arc::clone(&task).poll() {
@@ -132,7 +158,8 @@ where
                             shared.job_count.fetch_sub(1, Ordering::AcqRel);
                         }
                     }
-                };
+                }
+
                 continue;
             } else {
                 drop(global_guard);

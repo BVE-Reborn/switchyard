@@ -13,11 +13,12 @@ categories = []
 [dependencies]
 arrayvec = "0.5"
 bitflags = "1"
-futures-task = "0.3"
 futures-intrusive = "0.3"
+futures-task = "0.3"
 num_cpus = "1"
 parking_lot = "0.10"
 priority-queue = "1"
+slotmap = "0.4"
 
 [dev-dependencies]
 async-std = "1.6"
