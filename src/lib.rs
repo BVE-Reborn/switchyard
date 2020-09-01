@@ -142,16 +142,27 @@ impl<TD: 'static> Runtime<TD> {
         }
     }
 
-    pub fn spawn<Fut, T>(&self, pool: Pool, priority: Priority, fut: Fut) -> JoinHandle<T>
-    where
-        Fut: Future<Output = T> + Send + 'static,
-        T: Send + 'static,
-    {
+    /// Things that must be done every time a task is spawned
+    fn spawn_header(&self, pool: Pool) {
         assert!((pool as usize) < self.shared.queues.len());
 
         // SAFETY: we must grab and increment this counter so `access_per_thread_data` knows
         // we're in flight.
         self.shared.job_count.fetch_add(1, Ordering::AcqRel);
+
+        // Say we're no longer idle so that `yard.spawn(); yard.wait_for_idle()`
+        // won't "return early". If the thread hasn't woken up fully yet by the
+        // time wait_for_idle is called, it will immediately return even though logically there's
+        // still an outstanding job.
+        self.shared.idle_wait.reset();
+    }
+
+    pub fn spawn<Fut, T>(&self, pool: Pool, priority: Priority, fut: Fut) -> JoinHandle<T>
+    where
+        Fut: Future<Output = T> + Send + 'static,
+        T: Send + 'static,
+    {
+        self.spawn_header(pool);
 
         let (sender, receiver) = oneshot_channel();
         let job = Job::Future(Task::new(
@@ -182,11 +193,7 @@ impl<TD: 'static> Runtime<TD> {
         Fut: Future<Output = T>,
         T: Send + 'static,
     {
-        assert!((pool as usize) < self.shared.queues.len());
-
-        // SAFETY: we must grab and increment this counter so `access_per_thread_data` knows
-        // we're in flight.
-        self.shared.job_count.fetch_add(1, Ordering::AcqRel);
+        self.spawn_header(pool);
 
         let (sender, receiver) = oneshot_channel();
         let job = Job::Local(Box::new(move |td| {

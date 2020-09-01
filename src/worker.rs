@@ -123,11 +123,6 @@ where
                         if let Some(task) = slot_guard.remove(key) {
                             drop(slot_guard);
                             if let Poll::Ready(()) = Arc::clone(&task).poll() {
-                                assert_eq!(
-                                    Arc::strong_count(&task),
-                                    1,
-                                    "A future has retained its waker after returning Ready. This is mean."
-                                );
                                 shared.job_count.fetch_sub(1, Ordering::AcqRel);
                             }
                         }
@@ -135,11 +130,6 @@ where
                     Job::Future(task) => {
                         debug_assert_eq!(task.priority, queue_priority);
                         if let Poll::Ready(()) = Arc::clone(&task).poll() {
-                            assert_eq!(
-                                Arc::strong_count(&task),
-                                1,
-                                "A future has retained its waker after returning Ready. This is mean."
-                            );
                             shared.job_count.fetch_sub(1, Ordering::AcqRel);
                         }
                     }
