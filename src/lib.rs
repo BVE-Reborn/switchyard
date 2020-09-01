@@ -271,6 +271,9 @@ impl<TD: 'static> Switchyard<TD> {
 
     /// Kill all threads as soon as they come idle. All jobs submitted after this point
     /// will not run.
+    ///
+    /// This is equivalent to calling drop. Calling this function twice will be a no-op
+    /// the second time.
     pub fn finish(&mut self) {
         // send death signal then wake everyone up
         self.shared.death_signal.store(true, Ordering::Release);
