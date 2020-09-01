@@ -44,7 +44,6 @@ impl<TD> Hash for Job<TD> {
     }
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) enum ThreadLocalJob {
     Resume(DefaultKey),
 }
@@ -53,8 +52,8 @@ impl ThreadLocalJob {
     fn to_address(&self) -> usize {
         // SAFETY: These addresses are `Pin`, and we won't be removing them from their boxes, so this
         // should be valid to use for ParitalEq and Hash.
-        match self {
-            &Self::Resume(key) => KeyData::from(key).as_ffi() as usize,
+        match *self {
+            Self::Resume(key) => KeyData::from(key).as_ffi() as usize,
         }
     }
 }

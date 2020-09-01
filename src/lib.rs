@@ -153,7 +153,7 @@ impl<TD: 'static> Runtime<TD> {
         // Say we're no longer idle so that `yard.spawn(); yard.wait_for_idle()`
         // won't "return early". If the thread hasn't woken up fully yet by the
         // time wait_for_idle is called, it will immediately return even though logically there's
-        // still an outstanding job.
+        // still an outstanding, active, job.
         self.shared.idle_wait.reset();
     }
 
