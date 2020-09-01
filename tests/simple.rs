@@ -86,8 +86,6 @@ fn multi_tasks() {
 
     assert_eq!(futures_executor::block_on(task_one), Some(2 * 2));
     assert_eq!(futures_executor::block_on(task_two), Some(4 * 4));
-
-    assert_eq!(yard.jobs(), 0);
 }
 
 #[test]

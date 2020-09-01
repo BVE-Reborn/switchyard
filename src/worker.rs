@@ -55,6 +55,7 @@ where
                     break;
                 }
 
+                // TODO: there's a race between this and `finish` causing threads not to finish. Occurs when running all threads at once.
                 // wait for condvar signal
                 queue.cond_var.wait(&mut global_guard);
 
