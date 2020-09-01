@@ -1,6 +1,4 @@
 use futures_executor::block_on;
-use futures_intrusive::channel::shared::oneshot_channel as oneshot_async;
-use std::sync::mpsc::channel as oneshot_sync;
 use switchyard::{
     threads::{single_pool_one_to_one, thread_info},
     Runtime,

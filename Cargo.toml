@@ -20,6 +20,7 @@ parking_lot = "0.10"
 priority-queue = "1"
 
 [dev-dependencies]
+async-std = "1.6"
 futures-executor = "0.3"
 
 [profile.release]
