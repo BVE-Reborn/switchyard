@@ -50,6 +50,11 @@ where
                     shared.idle_wait.set();
                 }
 
+                // check if death was requested before
+                if shared.death_signal.load(Ordering::Acquire) {
+                    break;
+                }
+
                 // wait for condvar signal
                 queue.cond_var.wait(&mut global_guard);
 
