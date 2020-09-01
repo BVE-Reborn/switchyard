@@ -129,7 +129,7 @@ fn wait_for_idle_stalled() {
 }
 
 #[test]
-fn access_thread_local_data() {
+fn access_per_thread_data() {
     let mut yard = Runtime::new(1, single_pool_single_thread(None, None), || Cell::new(12));
 
     assert_eq!(yard.access_per_thread_data(), Some(vec![&mut Cell::new(12)]));
@@ -150,5 +150,10 @@ fn access_thread_local_data() {
     sender.send(()).unwrap();
 
     assert_eq!(futures_executor::block_on(task), Some(4));
+
+    // the task has cleared, but the thread may not be shut down yet
+    futures_executor::block_on(yard.wait_for_idle());
+
+    assert_eq!(yard.jobs(), 0);
     assert_eq!(yard.access_per_thread_data(), Some(vec![&mut Cell::new(4)]));
 }
