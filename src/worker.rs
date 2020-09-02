@@ -8,10 +8,7 @@ use futures_task::Poll;
 use parking_lot::Mutex;
 use priority_queue::PriorityQueue;
 use slotmap::DenseSlotMap;
-use std::{
-    rc::Rc,
-    sync::{atomic::Ordering, Arc},
-};
+use std::sync::{atomic::Ordering, Arc};
 
 pub(crate) fn body<TD, TDFunc>(
     shared: Arc<Shared<TD>>,
@@ -24,8 +21,8 @@ where
     TDFunc: Fn() -> TD + Send + Sync + 'static,
 {
     move || {
-        let thread_locals: Rc<TD> = Rc::new(thread_local_creator());
-        let thread_local_ptr = &*thread_locals as *const _ as *mut _;
+        let thread_locals: Arc<TD> = Arc::new(thread_local_creator());
+        let thread_local_ptr = &thread_locals as *const _ as *mut Arc<TD>;
         let thread_queue = Arc::new(ThreadLocalQueue {
             waiting: Mutex::new(DenseSlotMap::new()),
             inner: Mutex::new(PriorityQueue::new()),
@@ -87,21 +84,13 @@ where
             if let Some((job, _)) = local_guard.pop() {
                 drop(local_guard);
 
-                let job: ThreadLocalJob = job;
+                let job: ThreadLocalJob<TD> = job;
 
                 let poll_result = match job {
-                    ThreadLocalJob::Resume(key) => {
-                        let mut slot_guard = thread_queue.waiting.lock();
-                        if let Some(task) = slot_guard.remove(key) {
-                            drop(slot_guard);
-                            Some(unsafe { task.poll() })
-                        } else {
-                            None
-                        }
-                    }
+                    ThreadLocalJob::Future(key) => unsafe { key.poll() },
                 };
 
-                if let Some(Poll::Ready(())) = poll_result {
+                if let Poll::Ready(()) = poll_result {
                     shared.job_count.fetch_sub(1, Ordering::AcqRel);
                 }
 
@@ -118,15 +107,6 @@ where
                 let job: Job<TD> = job;
 
                 match job {
-                    Job::Resume(key) => {
-                        let mut slot_guard = queue.waiting.lock();
-                        if let Some(task) = slot_guard.remove(key) {
-                            drop(slot_guard);
-                            if let Poll::Ready(()) = Arc::clone(&task).poll() {
-                                shared.job_count.fetch_sub(1, Ordering::AcqRel);
-                            }
-                        }
-                    }
                     Job::Future(task) => {
                         debug_assert_eq!(task.priority, queue_priority);
                         if let Poll::Ready(()) = Arc::clone(&task).poll() {
@@ -136,7 +116,7 @@ where
                     Job::Local(func) => {
                         // SAFETY: This reference will only be read in this thread,
                         // and this thread's stack stores all data for the thread.
-                        let fut = func(Rc::clone(&thread_locals));
+                        let fut = func(Arc::clone(&thread_locals));
                         let task = ThreadLocalTask::new(
                             Arc::clone(&shared),
                             Arc::clone(&thread_queue),

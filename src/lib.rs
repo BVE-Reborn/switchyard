@@ -23,7 +23,6 @@ use slotmap::{DefaultKey, DenseSlotMap};
 use std::{
     future::Future,
     pin::Pin,
-    rc::Rc,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
@@ -59,7 +58,7 @@ impl<T: 'static> Future for JoinHandle<T> {
 
 struct ThreadLocalQueue<TD> {
     waiting: Mutex<DenseSlotMap<DefaultKey, Arc<ThreadLocalTask<TD>>>>,
-    inner: Mutex<PriorityQueue<ThreadLocalJob, u32>>,
+    inner: Mutex<PriorityQueue<ThreadLocalJob<TD>, u32>>,
 }
 struct Queue<TD> {
     waiting: Mutex<DenseSlotMap<DefaultKey, Arc<Task<TD>>>>,
@@ -79,7 +78,7 @@ struct Shared<TD> {
 pub struct Switchyard<TD: 'static> {
     shared: Arc<Shared<TD>>,
     threads: Vec<std::thread::JoinHandle<()>>,
-    thread_local_data: Vec<*mut TD>,
+    thread_local_data: Vec<*mut Arc<TD>>,
 }
 impl<TD: 'static> Switchyard<TD> {
     /// Create a new switchyard.
@@ -246,7 +245,7 @@ impl<TD: 'static> Switchyard<TD> {
     /// - Panics is `pool` refers to a non-existent job pool.
     pub fn spawn_local<Func, Fut, T>(&self, pool: Pool, priority: Priority, async_fn: Func) -> JoinHandle<T>
     where
-        Func: FnOnce(Rc<TD>) -> Fut + Send + 'static,
+        Func: FnOnce(Arc<TD>) -> Fut + Send + 'static,
         Fut: Future<Output = T>,
         T: Send + 'static,
     {
@@ -307,23 +306,22 @@ impl<TD: 'static> Switchyard<TD> {
     where
         TD: Send,
     {
-        let count = self.shared.job_count.load(Ordering::Acquire);
+        let threads_live = self.shared.active_threads.load(Ordering::Acquire);
 
-        // SAFETY: No more jobs can be added because we have an exclusive reference to the yard.
-        if count != 0 {
+        // SAFETY: No more jobs can be added and threads woken because we have an exclusive reference to the yard.
+        if threads_live != 0 {
             return None;
         }
 
         // SAFETY:
-        //  - We know there are no jobs running because `count` is zero and we have an exclusive reference to the yard.
-        //  - Threads do not hold any reference to their thread local data unless they are running jobs.
-        //  - All threads have yielded waiting for jobs, and no jobs can be added, so this cannot change.
-        //  - We are allowed to deref this from another thread as `TD` is `Send`.
-        // TODO:
-        //  - How can we be sure that threads haven't panicked after decrementing the count.
-        let data: Vec<&mut TD> = self.thread_local_data.iter().map(|&ptr| unsafe { &mut *ptr }).collect();
+        //  - We know there are no threads running because `count` is zero and we have an exclusive reference to the yard.
+        //  - Threads do not keep references to their `Arc`'s around while idle, nor hand them to tasks.
+        //  - `TD` is allowed to be `!Sync` because we never actually touch a `&TD`, only `&mut TD`.
+        let arcs: Vec<&mut Arc<TD>> = self.thread_local_data.iter().map(|&ptr| unsafe { &mut *ptr }).collect();
 
-        Some(data)
+        let data: Option<Vec<&mut TD>> = arcs.into_iter().map(|arc| Arc::get_mut(arc)).collect();
+
+        data
     }
 
     /// Kill all threads as soon as they come idle. All calls to spawn and spawn_local will

@@ -1,21 +1,19 @@
 use crate::{util::SenderSyncer, Pool, Priority, Queue, Shared, ThreadLocalQueue};
 use futures_task::ArcWake;
 use parking_lot::Mutex;
-use slotmap::{DefaultKey, KeyData};
+use slotmap::DefaultKey;
 use std::{
     future::Future,
     hash::{Hash, Hasher},
     pin::Pin,
-    rc::Rc,
-    sync::Arc,
+    sync::{atomic::Ordering, Arc},
     task::{Context, Poll},
 };
 
 #[allow(clippy::type_complexity)]
 pub(crate) enum Job<TD> {
-    Resume(DefaultKey),
     Future(Arc<Task<TD>>),
-    Local(Box<dyn FnOnce(Rc<TD>) -> Pin<Box<dyn Future<Output = ()>>> + Send>),
+    Local(Box<dyn FnOnce(Arc<TD>) -> Pin<Box<dyn Future<Output = ()>>> + Send>),
 }
 
 impl<TD> Job<TD> {
@@ -23,7 +21,6 @@ impl<TD> Job<TD> {
         // SAFETY: These addresses are `Pin`, and we won't be removing them from their boxes, so this
         // should be valid to use for ParitalEq and Hash.
         match self {
-            &Self::Resume(key) => KeyData::from(key).as_ffi() as usize,
             Self::Future(fut) => &*fut.future.lock() as *const _ as *const () as usize,
             Self::Local(func) => &**func as *const _ as *const () as usize,
         }
@@ -44,29 +41,29 @@ impl<TD> Hash for Job<TD> {
     }
 }
 
-pub(crate) enum ThreadLocalJob {
-    Resume(DefaultKey),
+pub(crate) enum ThreadLocalJob<TD> {
+    Future(Arc<ThreadLocalTask<TD>>),
 }
 
-impl ThreadLocalJob {
+impl<TD> ThreadLocalJob<TD> {
     fn to_address(&self) -> usize {
         // SAFETY: These addresses are `Pin`, and we won't be removing them from their boxes, so this
         // should be valid to use for ParitalEq and Hash.
-        match *self {
-            Self::Resume(key) => KeyData::from(key).as_ffi() as usize,
+        match self {
+            Self::Future(fut) => (unsafe { &*fut.future.inner_ref().lock() }) as *const _ as *const () as usize,
         }
     }
 }
 
-impl PartialEq for ThreadLocalJob {
+impl<TD> PartialEq for ThreadLocalJob<TD> {
     fn eq(&self, other: &Self) -> bool {
         self.to_address() == other.to_address()
     }
 }
 
-impl Eq for ThreadLocalJob {}
+impl<TD> Eq for ThreadLocalJob<TD> {}
 
-impl Hash for ThreadLocalJob {
+impl<TD> Hash for ThreadLocalJob<TD> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_usize(self.to_address());
     }
@@ -137,12 +134,39 @@ impl<TD> Waker<TD> {
     }
 }
 
+impl<TD> Drop for Waker<TD> {
+    fn drop(&mut self) {
+        // We're the last waker, clean up our task
+        let queue: &Queue<TD> = &self.shared.queues[self.pool as usize];
+
+        let mut waiting_lock = queue.waiting.lock();
+        // let this drop, if someone woke this task already, this will be `None`.
+        if let Some(fut) = waiting_lock.remove(self.future_key) {
+            // SAFETY: drop this future before decrementing the count
+            drop(fut);
+            // we're the last of our task, remove it from the active
+            self.shared.job_count.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+}
+
 impl<TD> ArcWake for Waker<TD> {
     fn wake_by_ref(arc_self: &Arc<Self>) {
         let queue: &Queue<TD> = &arc_self.shared.queues[arc_self.pool as usize];
 
+        let mut waiting_lock = queue.waiting.lock();
+        let future_opt = waiting_lock.remove(arc_self.future_key);
+        drop(waiting_lock);
+
+        let future = match future_opt {
+            // Someone got to this task first
+            None => return,
+            // We're the first to awaken it
+            Some(fut) => fut,
+        };
+
         let mut queue_guard = queue.inner.lock();
-        queue_guard.push(Job::Resume(arc_self.future_key), arc_self.priority);
+        queue_guard.push(Job::Future(future), arc_self.priority);
         queue.cond_var.notify_one();
         drop(queue_guard);
     }
@@ -227,17 +251,47 @@ impl<TD> ThreadLocalWaker<TD> {
     }
 }
 
+impl<TD> Drop for ThreadLocalWaker<TD> {
+    fn drop(&mut self) {
+        // We're the last waker, clean up our task
+        let local_queue: &ThreadLocalQueue<TD> = &self.return_queue;
+
+        let mut waiting_lock = local_queue.waiting.lock();
+        // let this drop, if someone woke this task already, this will be `None`.
+        if let Some(fut) = waiting_lock.remove(self.future_key) {
+            // SAFETY: drop this future before decrementing the count as it may hold a reference
+            // to thread local data.
+            drop(fut);
+            // we're the last of our task, remove it from the active
+            self.shared.job_count.fetch_sub(1, Ordering::AcqRel);
+        }
+        drop(waiting_lock);
+    }
+}
+
 impl<TD> ArcWake for ThreadLocalWaker<TD> {
     fn wake_by_ref(arc_self: &Arc<Self>) {
         let global_queue: &Queue<TD> = &arc_self.shared.queues[arc_self.pool as usize];
+        let local_queue: &ThreadLocalQueue<TD> = &arc_self.return_queue;
+
+        let mut waiting_lock = local_queue.waiting.lock();
+        let future_opt = waiting_lock.remove(arc_self.future_key);
+        drop(waiting_lock);
+
+        let future = match future_opt {
+            // Someone got to this task first
+            None => return,
+            // We're the first to awaken it
+            Some(fut) => fut,
+        };
 
         // Always grab global -> local
 
         // Lock global mutex for condvar
         let global_guard = global_queue.inner.lock();
         // Lock local mutex for modification
-        let mut local_guard = arc_self.return_queue.inner.lock();
-        local_guard.push(ThreadLocalJob::Resume(arc_self.future_key), arc_self.priority);
+        let mut local_guard = local_queue.inner.lock();
+        local_guard.push(ThreadLocalJob::Future(future), arc_self.priority);
         global_queue.cond_var.notify_one();
         drop(global_guard);
     }

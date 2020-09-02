@@ -22,6 +22,7 @@ slotmap = "0.4"
 
 [dev-dependencies]
 async-std = "1.6"
+flume = "0.8"
 futures-executor = "0.3"
 
 [profile.release]

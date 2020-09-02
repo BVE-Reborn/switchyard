@@ -1,5 +1,4 @@
-use futures_intrusive::channel::shared::oneshot_channel as oneshot_async;
-use std::{cell::Cell, sync::mpsc::channel as oneshot_sync, time::Duration};
+use std::{cell::Cell, time::Duration};
 use switchyard::{threads::single_pool_single_thread, Switchyard};
 
 #[test]
@@ -27,14 +26,14 @@ fn single_waiting_task() {
     // The design of this test is to only send the value to wait for after we confirm that the
     // future is running, which gives it a very high chance of the await returning Pending
     // allowing us to test our wakers.
-    let (sender1, receiver1) = oneshot_sync();
-    let (sender2, receiver2) = oneshot_async();
+    let (sender1, receiver1) = flume::unbounded();
+    let (sender2, receiver2) = flume::unbounded();
 
     let handle = yard.spawn(0, 0, async move {
         // We're running the future
         sender1.send(()).unwrap();
         // Wait for data
-        receiver2.receive().await.unwrap()
+        receiver2.recv_async().await.unwrap()
     });
 
     // Wait until the future is running
@@ -54,14 +53,14 @@ fn single_local_waiting_task() {
     // The design of this test is to only send the value to wait for after we confirm that the
     // future is running, which gives it a very high chance of the await returning Pending
     // allowing us to test our wakers.
-    let (sender1, receiver1) = oneshot_sync();
-    let (sender2, receiver2) = oneshot_async();
+    let (sender1, receiver1) = flume::unbounded();
+    let (sender2, receiver2) = flume::unbounded();
 
     let handle = yard.spawn_local(0, 0, move |_| async move {
         // We're running the future
         sender1.send(()).unwrap();
         // Wait for data
-        receiver2.receive().await.unwrap()
+        receiver2.recv_async().await.unwrap()
     });
 
     // Wait until the future is running
@@ -92,7 +91,7 @@ fn multi_tasks() {
 fn wait_for_idle() {
     let yard = Switchyard::new(1, single_pool_single_thread(None, None), || ()).unwrap();
 
-    let (sender, receiver) = oneshot_sync();
+    let (sender, receiver) = flume::unbounded();
     let task = yard.spawn(0, 0, async move {
         // Regular sleep to hard block the thread
         std::thread::sleep(Duration::from_millis(100));
@@ -110,9 +109,9 @@ fn wait_for_idle() {
 fn wait_for_idle_stalled() {
     let yard = Switchyard::new(1, single_pool_single_thread(None, None), || ()).unwrap();
 
-    let (sender, receiver) = oneshot_async();
+    let (sender, receiver) = flume::unbounded();
     let task = yard.spawn(0, 0, async move {
-        receiver.receive().await.unwrap();
+        receiver.recv_async().await.unwrap();
         2 * 2
     });
 
@@ -132,22 +131,30 @@ fn wait_for_idle_stalled() {
 fn access_per_thread_data() {
     let mut yard = Switchyard::new(1, single_pool_single_thread(None, None), || Cell::new(12)).unwrap();
 
+    futures_executor::block_on(yard.wait_for_idle());
+
     assert_eq!(yard.access_per_thread_data(), Some(vec![&mut Cell::new(12)]));
 
-    let (sender, receiver) = oneshot_async();
+    let (job_sender, test_receiver) = flume::unbounded();
+    let (test_sender, job_receiver) = flume::unbounded();
     let task = yard.spawn_local(0, 0, move |value| async move {
-        receiver.receive().await.unwrap();
+        job_sender.send(()).unwrap();
+        job_receiver.recv_async().await.unwrap();
+
         value.set(4);
         4
     });
 
     assert_eq!(yard.jobs(), 1);
 
-    // nothing has been sent, there are still jobs in flight, we must wait.
+    // wait until the job actually starts
+    test_receiver.recv().unwrap();
+
+    // nothing has been sent, there are still jobs in flight using the data, we must wait.
     assert_eq!(yard.access_per_thread_data(), None);
     assert_eq!(yard.jobs(), 1);
 
-    sender.send(()).unwrap();
+    test_sender.send(()).unwrap();
 
     assert_eq!(futures_executor::block_on(task), Some(4));
 

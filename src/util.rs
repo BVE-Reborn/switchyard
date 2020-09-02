@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 /// Struct that lies about T being send/sync.
 /// All access to the inner value is unsafe because duh.
 ///
@@ -35,7 +37,7 @@ unsafe impl<T> Sync for SenderSyncer<T> {}
 ///
 /// - Can only be dereferenced on another thread if `TD` is `Send`.
 /// - Can only get a `&mut` to inner value if no other references exist.
-pub struct ThreadLocalPointer<TD>(pub *mut TD);
+pub struct ThreadLocalPointer<TD>(pub *mut Arc<TD>);
 
 unsafe impl<TD> Send for ThreadLocalPointer<TD> {}
 unsafe impl<TD> Sync for ThreadLocalPointer<TD> {}
