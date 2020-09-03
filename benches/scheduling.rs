@@ -56,5 +56,70 @@ pub fn wide(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, wide);
+pub fn chain(c: &mut Criterion) {
+    let mut group = c.benchmark_group("chain");
+
+    let count = 1_000;
+
+    let (sender, receiver) = flume::unbounded();
+
+    group.throughput(Throughput::Elements(count as u64));
+
+    group.bench_function("async-std", |b| {
+        b.iter_batched(
+            || {
+                let receiver = receiver.clone();
+                let mut head = async_std::task::spawn(async move {
+                    receiver.recv_async().await.unwrap();
+                });
+                for _ in 0..count {
+                    let old_head = head;
+                    head = async_std::task::spawn(async move {
+                        old_head.await;
+                    });
+                }
+                head
+            },
+            |input| {
+                sender.send(()).unwrap();
+                futures_executor::block_on(input)
+            },
+            BatchSize::PerIteration,
+        )
+    });
+
+    let yard = switchyard::Switchyard::new(
+        1,
+        threads::single_pool_one_to_one(threads::thread_info(), Some("switchyard")),
+        || (),
+    )
+    .unwrap();
+
+    group.bench_function("switchyard", |b| {
+        b.iter_batched(
+            || {
+                let receiver = receiver.clone();
+                let mut head = yard.spawn(0, 0, async move {
+                    receiver.recv_async().await.unwrap();
+                });
+                for _ in 0..count {
+                    let old_head = head;
+                    head = yard.spawn(0, 0, async move {
+                        old_head.await;
+                    });
+                }
+                head
+            },
+            |input| {
+                sender.send(()).unwrap();
+                futures_executor::block_on(input)
+            },
+            BatchSize::PerIteration,
+        )
+    });
+
+    group.finish();
+}
+
+criterion_group!(benches, wide, chain);
 criterion_main!(benches);
