@@ -90,7 +90,7 @@ where
                     ThreadLocalJob::Future(key) => unsafe { key.poll() },
                 };
 
-                if let Poll::Ready(()) = poll_result {
+                if let Some(Poll::Ready(())) = poll_result {
                     shared.job_count.fetch_sub(1, Ordering::AcqRel);
                 }
 
@@ -109,7 +109,7 @@ where
                 match job {
                     Job::Future(task) => {
                         debug_assert_eq!(task.priority, queue_priority);
-                        if let Poll::Ready(()) = Arc::clone(&task).poll() {
+                        if let Some(Poll::Ready(())) = task.poll() {
                             shared.job_count.fetch_sub(1, Ordering::AcqRel);
                         }
                     }
@@ -124,7 +124,7 @@ where
                             thread_info.pool,
                             queue_priority,
                         );
-                        if let Poll::Ready(()) = unsafe { task.poll() } {
+                        if let Some(Poll::Ready(())) = unsafe { task.poll() } {
                             shared.job_count.fetch_sub(1, Ordering::AcqRel);
                         }
                     }

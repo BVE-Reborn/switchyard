@@ -21,7 +21,7 @@ impl<TD> Job<TD> {
         // SAFETY: These addresses are `Pin`, and we won't be removing them from their boxes, so this
         // should be valid to use for ParitalEq and Hash.
         match self {
-            Self::Future(fut) => &*fut.future.lock() as *const _ as *const () as usize,
+            Self::Future(fut) => fut.future_address,
             Self::Local(func) => &**func as *const _ as *const () as usize,
         }
     }
@@ -48,9 +48,9 @@ pub(crate) enum ThreadLocalJob<TD> {
 impl<TD> ThreadLocalJob<TD> {
     fn to_address(&self) -> usize {
         // SAFETY: These addresses are `Pin`, and we won't be removing them from their boxes, so this
-        // should be valid to use for ParitalEq and Hash.
+        // should be valid to use for PartialEq and Hash.
         match self {
-            Self::Future(fut) => (unsafe { &*fut.future.inner_ref().lock() }) as *const _ as *const () as usize,
+            Self::Future(fut) => fut.future_address,
         }
     }
 }
@@ -69,9 +69,24 @@ impl<TD> Hash for ThreadLocalJob<TD> {
     }
 }
 
+pub(crate) struct StoredFuture {
+    pub inner: Pin<Box<dyn Future<Output = ()> + Send>>,
+    // Future has returned Ready(T) and future polls should be ignored
+    pub completed: bool,
+}
+impl StoredFuture {
+    pub fn new(future: Pin<Box<dyn Future<Output = ()> + Send>>) -> Self {
+        Self {
+            inner: future,
+            completed: false,
+        }
+    }
+}
+
 pub(crate) struct Task<TD> {
     pub shared: Arc<Shared<TD>>,
-    pub future: Mutex<Pin<Box<dyn Future<Output = ()> + Send>>>,
+    pub future: Mutex<StoredFuture>,
+    pub future_address: usize,
     pub pool: Pool,
     pub priority: Priority,
 }
@@ -80,30 +95,43 @@ impl<TD> Task<TD> {
     where
         Fut: Future<Output = ()> + Send + 'static,
     {
+        let fut_box = Box::pin(future);
         Arc::new(Self {
             shared,
-            future: Mutex::new(Box::pin(future)),
+            future_address: &*fut_box as *const _ as usize,
+            future: Mutex::new(StoredFuture::new(fut_box)),
             pool,
             priority,
         })
     }
 
-    pub fn poll(self: Arc<Self>) -> Poll<()> {
+    pub fn poll(self: Arc<Self>) -> Option<Poll<()>> {
         let (raw_waker, key) = Waker::from_task(&self);
         let waker = futures_task::waker(raw_waker);
         let mut ctx = Context::from_waker(&waker);
 
         let mut guard = self.future.lock();
 
-        let poll_value = guard.as_mut().poll(&mut ctx);
-
-        if let Poll::Ready(_) = poll_value {
-            let mut slot_guard = self.shared.queues[self.pool as usize].waiting.lock();
-            slot_guard.remove(key);
-            drop(slot_guard)
+        if guard.completed {
+            // This future is finished
+            return None;
         }
 
-        poll_value
+        let poll_value = guard.inner.as_mut().poll(&mut ctx);
+
+        if let Poll::Ready(_) = poll_value {
+            // Removing from the waiting queue is often enough, but if the task
+            // is re-awoken _during_ the call to poll which returns Ready(T), we
+            // still need to prevent it from running again
+
+            let mut slot_guard = self.shared.queues[self.pool as usize].waiting.lock();
+            slot_guard.remove(key);
+            drop(slot_guard);
+
+            guard.completed = true;
+        }
+
+        Some(poll_value)
     }
 }
 
@@ -172,11 +200,26 @@ impl<TD> ArcWake for Waker<TD> {
     }
 }
 
+pub(crate) struct StoredThreadLocalFuture {
+    pub inner: Pin<Box<dyn Future<Output = ()>>>,
+    // Future has returned Ready(T) and future polls should be ignored
+    pub completed: bool,
+}
+impl StoredThreadLocalFuture {
+    pub fn new(future: Pin<Box<dyn Future<Output = ()>>>) -> Self {
+        Self {
+            inner: future,
+            completed: false,
+        }
+    }
+}
+
 // TODO: Are any of these threads just passthrough to the waker
 pub(crate) struct ThreadLocalTask<TD> {
     pub shared: Arc<Shared<TD>>,
     pub return_queue: Arc<ThreadLocalQueue<TD>>,
-    pub future: SenderSyncer<Mutex<Pin<Box<dyn Future<Output = ()>>>>>,
+    pub future: SenderSyncer<Mutex<StoredThreadLocalFuture>>,
+    pub future_address: usize,
     pub pool: Pool,
     pub priority: Priority,
 }
@@ -191,10 +234,12 @@ impl<TD> ThreadLocalTask<TD> {
     where
         Fut: Future<Output = ()> + 'static,
     {
+        let fut_box = Box::pin(future);
         Arc::new(Self {
             shared,
             return_queue,
-            future: unsafe { SenderSyncer::new(Mutex::new(Box::pin(future))) },
+            future_address: &*fut_box as *const _ as usize,
+            future: unsafe { SenderSyncer::new(Mutex::new(StoredThreadLocalFuture::new(fut_box))) },
             pool,
             priority,
         })
@@ -203,22 +248,32 @@ impl<TD> ThreadLocalTask<TD> {
     /// # Safety
     ///
     /// - This function can only be called on the thread that `new` was called on.
-    pub unsafe fn poll(self: Arc<Self>) -> Poll<()> {
+    pub unsafe fn poll(self: Arc<Self>) -> Option<Poll<()>> {
         let (raw_waker, key) = ThreadLocalWaker::from_task(&self);
         let waker = futures_task::waker(raw_waker);
         let mut ctx = Context::from_waker(&waker);
 
         let mut guard = self.future.inner_ref().lock();
 
-        let poll_value = guard.as_mut().poll(&mut ctx);
-
-        if let Poll::Ready(_) = poll_value {
-            let mut slot_guard = self.return_queue.waiting.lock();
-            slot_guard.remove(key);
-            drop(slot_guard)
+        if guard.completed {
+            return None;
         }
 
-        poll_value
+        let poll_value = guard.inner.as_mut().poll(&mut ctx);
+
+        if let Poll::Ready(_) = poll_value {
+            // Removing from the waiting queue is often enough, but if the task
+            // is re-awoken _during_ the call to poll which returns Ready(T), we
+            // still need to prevent it from running again
+
+            let mut slot_guard = self.return_queue.waiting.lock();
+            slot_guard.remove(key);
+            drop(slot_guard);
+
+            guard.completed = true;
+        }
+
+        Some(poll_value)
     }
 }
 

@@ -16,5 +16,8 @@ fn ten_thousand() {
         for (idx, handle) in handles.into_iter().enumerate() {
             assert_eq!(handle.await, Some(idx * 2));
         }
+        yard.wait_for_idle().await;
     });
+
+    assert_eq!(yard.jobs(), 0);
 }

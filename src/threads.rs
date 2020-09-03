@@ -56,12 +56,12 @@ pub fn single_pool_single_thread(
 /// - Each thread assigned to a different core.
 ///
 /// `input` is the result of calling [`thread_info`].
-pub fn single_pool_one_to_one(
+pub fn single_pool_one_to_one<'a>(
     input: ThreadAllocationInput,
-    thread_name: Option<String>,
-) -> impl Iterator<Item = ThreadAllocationOutput> {
+    thread_name: Option<&'a str>,
+) -> impl Iterator<Item = ThreadAllocationOutput> + 'a {
     (0..input.logical).map(move |idx| ThreadAllocationOutput {
-        name: thread_name.clone(),
+        name: thread_name.map(ToOwned::to_owned),
         ident: idx,
         pool: 0,
         affinity: Some(idx),
@@ -75,12 +75,12 @@ pub fn single_pool_one_to_one(
 /// - Each set of two threads assigned to a different core.
 ///
 /// `input` is the result of calling [`thread_info`].
-pub fn single_pool_two_to_one(
+pub fn single_pool_two_to_one<'a>(
     input: ThreadAllocationInput,
-    thread_name: Option<String>,
-) -> impl Iterator<Item = ThreadAllocationOutput> {
+    thread_name: Option<&'a str>,
+) -> impl Iterator<Item = ThreadAllocationOutput> + 'a {
     (0..(input.logical * 2)).map(move |idx| ThreadAllocationOutput {
-        name: thread_name.clone(),
+        name: thread_name.map(ToOwned::to_owned),
         ident: idx,
         pool: 0,
         affinity: Some(idx / 2),
@@ -99,12 +99,12 @@ pub fn single_pool_two_to_one(
 ///   - Thread 3 -> Pool 1
 ///
 /// `input` is the result of calling [`thread_info`].
-pub fn double_pool_one_to_one(
+pub fn double_pool_one_to_one<'a>(
     input: ThreadAllocationInput,
-    thread_name: Option<String>,
-) -> impl Iterator<Item = ThreadAllocationOutput> {
+    thread_name: Option<&'a str>,
+) -> impl Iterator<Item = ThreadAllocationOutput> + 'a {
     (0..input.logical).map(move |idx| ThreadAllocationOutput {
-        name: thread_name.clone(),
+        name: thread_name.map(ToOwned::to_owned),
         ident: idx,
         pool: (idx % 2) as u8,
         affinity: Some(idx),
@@ -123,12 +123,12 @@ pub fn double_pool_one_to_one(
 ///   - Thread 3 (Core 1) -> Pool 1
 ///
 /// `input` is the result of calling [`thread_info`].
-pub fn double_pool_two_to_one(
+pub fn double_pool_two_to_one<'a>(
     input: ThreadAllocationInput,
-    thread_name: Option<String>,
-) -> impl Iterator<Item = ThreadAllocationOutput> {
+    thread_name: Option<&'a str>,
+) -> impl Iterator<Item = ThreadAllocationOutput> + 'a {
     (0..(input.logical * 2)).map(move |idx| ThreadAllocationOutput {
-        name: thread_name.clone(),
+        name: thread_name.map(ToOwned::to_owned),
         ident: idx,
         pool: (idx % 2) as u8,
         affinity: Some(idx / 2),

@@ -212,7 +212,9 @@ impl<TD: 'static> Switchyard<TD> {
         let job = Job::Future(Task::new(
             Arc::clone(&self.shared),
             async move {
-                sender.send(fut.await).unwrap_or_else(|_| panic!("Could not send data"));
+                // We don't care about the result, if this fails, that just means the join handle
+                // has been dropped.
+                let _ = sender.send(fut.await);
             },
             pool,
             priority,
@@ -254,9 +256,9 @@ impl<TD: 'static> Switchyard<TD> {
         let (sender, receiver) = oneshot_channel();
         let job = Job::Local(Box::new(move |td| {
             Box::pin(async move {
-                sender
-                    .send(async_fn(td).await)
-                    .unwrap_or_else(|_| panic!("Could not send data"));
+                // We don't care about the result, if this fails, that just means the join handle
+                // has been dropped.
+                let _ = sender.send(async_fn(td).await);
             })
         }));
 
