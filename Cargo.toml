@@ -10,6 +10,10 @@ license = "MIT OR Apache-2.0 OR Zlib"
 keywords = []
 categories = []
 
+[[bench]]
+name = "scheduling"
+harness = false
+
 [dependencies]
 arrayvec = "0.5"
 bitflags = "1"
@@ -22,8 +26,13 @@ slotmap = "0.4"
 
 [dev-dependencies]
 async-std = "1.6"
+criterion = "0.3"
 flume = "0.8"
 futures-executor = "0.3"
+
+[profile.bench]
+debug = true
+lto = "thin"
 
 [profile.release]
 debug = false
