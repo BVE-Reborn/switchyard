@@ -105,7 +105,7 @@ impl<TD> Task<TD> {
         })
     }
 
-    pub fn poll(self: Arc<Self>) -> Option<Poll<()>> {
+    pub fn poll(self: Arc<Self>) {
         let (raw_waker, key) = Waker::from_task(&self);
         let waker = futures_task::waker(raw_waker);
         let mut ctx = Context::from_waker(&waker);
@@ -114,7 +114,7 @@ impl<TD> Task<TD> {
 
         if guard.completed {
             // This future is finished
-            return None;
+            return;
         }
 
         let poll_value = guard.inner.as_mut().poll(&mut ctx);
@@ -130,8 +130,12 @@ impl<TD> Task<TD> {
 
             guard.completed = true;
         }
+    }
+}
 
-        Some(poll_value)
+impl<TD> Drop for Task<TD> {
+    fn drop(&mut self) {
+        self.shared.job_count.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
@@ -168,13 +172,8 @@ impl<TD> Drop for Waker<TD> {
         let queue: &Queue<TD> = &self.shared.queues[self.pool as usize];
 
         let mut waiting_lock = queue.waiting.lock();
-        // let this drop, if someone woke this task already, this will be `None`.
-        if let Some(fut) = waiting_lock.remove(self.future_key) {
-            // SAFETY: drop this future before decrementing the count
-            drop(fut);
-            // we're the last of our task, remove it from the active
-            self.shared.job_count.fetch_sub(1, Ordering::AcqRel);
-        }
+        let _ = waiting_lock.remove(self.future_key);
+        drop(waiting_lock);
     }
 }
 
@@ -248,7 +247,7 @@ impl<TD> ThreadLocalTask<TD> {
     /// # Safety
     ///
     /// - This function can only be called on the thread that `new` was called on.
-    pub unsafe fn poll(self: Arc<Self>) -> Option<Poll<()>> {
+    pub unsafe fn poll(self: Arc<Self>) {
         let (raw_waker, key) = ThreadLocalWaker::from_task(&self);
         let waker = futures_task::waker(raw_waker);
         let mut ctx = Context::from_waker(&waker);
@@ -256,7 +255,7 @@ impl<TD> ThreadLocalTask<TD> {
         let mut guard = self.future.inner_ref().lock();
 
         if guard.completed {
-            return None;
+            return;
         }
 
         let poll_value = guard.inner.as_mut().poll(&mut ctx);
@@ -272,8 +271,12 @@ impl<TD> ThreadLocalTask<TD> {
 
             guard.completed = true;
         }
+    }
+}
 
-        Some(poll_value)
+impl<TD> Drop for ThreadLocalTask<TD> {
+    fn drop(&mut self) {
+        self.shared.job_count.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
@@ -312,14 +315,7 @@ impl<TD> Drop for ThreadLocalWaker<TD> {
         let local_queue: &ThreadLocalQueue<TD> = &self.return_queue;
 
         let mut waiting_lock = local_queue.waiting.lock();
-        // let this drop, if someone woke this task already, this will be `None`.
-        if let Some(fut) = waiting_lock.remove(self.future_key) {
-            // SAFETY: drop this future before decrementing the count as it may hold a reference
-            // to thread local data.
-            drop(fut);
-            // we're the last of our task, remove it from the active
-            self.shared.job_count.fetch_sub(1, Ordering::AcqRel);
-        }
+        let _ = waiting_lock.remove(self.future_key);
         drop(waiting_lock);
     }
 }

@@ -4,7 +4,6 @@ use crate::{
     util::ThreadLocalPointer,
     Queue, Shared, ThreadLocalQueue,
 };
-use futures_task::Poll;
 use parking_lot::Mutex;
 use priority_queue::PriorityQueue;
 use slotmap::DenseSlotMap;
@@ -86,13 +85,9 @@ where
 
                 let job: ThreadLocalJob<TD> = job;
 
-                let poll_result = match job {
+                match job {
                     ThreadLocalJob::Future(key) => unsafe { key.poll() },
                 };
-
-                if let Some(Poll::Ready(())) = poll_result {
-                    shared.job_count.fetch_sub(1, Ordering::AcqRel);
-                }
 
                 continue;
             } else {
@@ -109,9 +104,7 @@ where
                 match job {
                     Job::Future(task) => {
                         debug_assert_eq!(task.priority, queue_priority);
-                        if let Some(Poll::Ready(())) = task.poll() {
-                            shared.job_count.fetch_sub(1, Ordering::AcqRel);
-                        }
+                        task.poll();
                     }
                     Job::Local(func) => {
                         // SAFETY: This reference will only be read in this thread,
@@ -124,9 +117,7 @@ where
                             thread_info.pool,
                             queue_priority,
                         );
-                        if let Some(Poll::Ready(())) = unsafe { task.poll() } {
-                            shared.job_count.fetch_sub(1, Ordering::AcqRel);
-                        }
+                        unsafe { task.poll() };
                     }
                 }
 
