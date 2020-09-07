@@ -11,6 +11,10 @@ pub enum SwitchyardCreationError {
     TooManyPools {
         pools_requested: u8,
     },
+    InvalidAffinity {
+        affinity: usize,
+        total_threads: usize,
+    },
 }
 
 impl fmt::Display for SwitchyardCreationError {
@@ -29,6 +33,14 @@ impl fmt::Display for SwitchyardCreationError {
                 f,
                 "Requested {} pools which is greater than the max {}",
                 pools_requested, MAX_POOLS
+            ),
+            Self::InvalidAffinity {
+                affinity,
+                total_threads,
+            } => write!(
+                f,
+                "Requested affinity {} which is greater than total logical core count {}",
+                affinity, total_threads
             ),
         }
     }

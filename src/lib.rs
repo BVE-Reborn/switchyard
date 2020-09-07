@@ -110,6 +110,7 @@ impl<TD: 'static> Switchyard<TD> {
         let thread_local_data_creation_arc = Arc::new(thread_local_data_creation);
         let allocation_vec: Vec<_> = thread_allocations.into_iter().collect();
 
+        let num_logical_cpus = num_cpus::get();
         for (idx, allocation) in allocation_vec.iter().enumerate() {
             if allocation.pool >= pool_count {
                 return Err(SwitchyardCreationError::InvalidPoolIndex {
@@ -117,6 +118,14 @@ impl<TD: 'static> Switchyard<TD> {
                     pool_idx: allocation.pool,
                     total_pools: pool_count,
                 });
+            }
+            if let Some(affin) = allocation.affinity {
+                if affin >= num_logical_cpus {
+                    return Err(SwitchyardCreationError::InvalidAffinity {
+                        affinity: affin,
+                        total_threads: num_logical_cpus,
+                    });
+                }
             }
         }
 

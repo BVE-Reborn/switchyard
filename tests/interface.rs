@@ -38,3 +38,9 @@ fn spawn_finished() {
 
     yard.spawn(0, 0, async move {});
 }
+
+#[test]
+#[should_panic]
+fn insane_affinity() {
+    let _yard = Switchyard::new(1, single_pool_single_thread(None, Some(usize::MAX)), || ()).unwrap();
+}
