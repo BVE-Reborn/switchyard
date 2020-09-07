@@ -34,6 +34,10 @@ where
         // Drop sender so receiver will stop waiting
         drop(thread_local_sender);
 
+        if let Some(affin) = thread_info.affinity {
+            affinity::set_thread_affinity([affin]).unwrap();
+        }
+
         let queue: &Queue<TD> = &shared.queues[thread_info.pool as usize];
 
         loop {
