@@ -29,6 +29,7 @@ use std::{
     },
 };
 
+mod affinity;
 mod error;
 mod task;
 pub mod threads;
