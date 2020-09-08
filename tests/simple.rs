@@ -7,7 +7,7 @@ fn single_task() {
     let handle = yard.spawn(0, 0, async { 12 });
     let result = futures_executor::block_on(handle);
 
-    assert_eq!(result, Some(12));
+    assert_eq!(result, 12);
 }
 
 #[test]
@@ -16,7 +16,7 @@ fn single_local_task() {
     let handle = yard.spawn_local(0, 0, |value| async move { value.take() + 12 });
     let result = futures_executor::block_on(handle);
 
-    assert_eq!(result, Some(42));
+    assert_eq!(result, 42);
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn single_waiting_task() {
 
     let result = futures_executor::block_on(handle);
 
-    assert_eq!(result, Some(42));
+    assert_eq!(result, 42);
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn single_local_waiting_task() {
 
     let result = futures_executor::block_on(handle);
 
-    assert_eq!(result, Some(42));
+    assert_eq!(result, 42);
 }
 
 #[test]
@@ -83,8 +83,8 @@ fn multi_tasks() {
     let task_one = yard.spawn(0, 0, async move { 2 * 2 });
     let task_two = yard.spawn(0, 0, async move { 4 * 4 });
 
-    assert_eq!(futures_executor::block_on(task_one), Some(2 * 2));
-    assert_eq!(futures_executor::block_on(task_two), Some(4 * 4));
+    assert_eq!(futures_executor::block_on(task_one), 2 * 2);
+    assert_eq!(futures_executor::block_on(task_two), 4 * 4);
 }
 
 #[test]
@@ -101,7 +101,7 @@ fn wait_for_idle() {
     futures_executor::block_on(yard.wait_for_idle());
 
     assert_eq!(receiver.recv().unwrap(), 4);
-    assert_eq!(futures_executor::block_on(task), Some(()));
+    assert_eq!(futures_executor::block_on(task), ());
     assert_eq!(yard.jobs(), 0);
 }
 
@@ -124,7 +124,7 @@ fn wait_for_idle_stalled() {
 
     sender.send(()).unwrap();
 
-    assert_eq!(futures_executor::block_on(task), Some(4));
+    assert_eq!(futures_executor::block_on(task), 4);
 }
 
 #[test]
@@ -156,7 +156,7 @@ fn access_per_thread_data() {
 
     test_sender.send(()).unwrap();
 
-    assert_eq!(futures_executor::block_on(task), Some(4));
+    assert_eq!(futures_executor::block_on(task), 4);
 
     // the task has cleared, but the thread may not be shut down yet
     futures_executor::block_on(yard.wait_for_idle());

@@ -14,7 +14,7 @@ fn ten_thousand() {
 
     block_on(async {
         for (idx, handle) in handles.into_iter().enumerate() {
-            assert_eq!(handle.await, Some(idx * 2));
+            assert_eq!(handle.await, idx * 2);
         }
         yard.wait_for_idle().await;
     });
