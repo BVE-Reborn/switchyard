@@ -152,6 +152,11 @@ impl<TD: 'static> Switchyard<TD> {
             } else {
                 builder
             };
+            let builder = if let Some(stack_size) = thread_info.stack_size.take() {
+                builder.stack_size(stack_size)
+            } else {
+                builder
+            };
             threads.push(
                 builder
                     .spawn(worker::body::<TD, TDFunc>(

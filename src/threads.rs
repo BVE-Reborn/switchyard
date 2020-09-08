@@ -21,6 +21,8 @@ pub struct ThreadAllocationOutput {
     pub ident: usize,
     /// Job pool index that the thread services.
     pub pool: Pool,
+    /// Size of spawned thread's stack. Will use system default if `None`.
+    pub stack_size: Option<usize>,
     /// Core index to pin thread to. If a platform doesn't support affinity, will have
     /// no effect. Currently only windows and linux support affinities.
     pub affinity: Option<usize>,
@@ -46,6 +48,7 @@ pub fn single_pool_single_thread(
         name: thread_name,
         ident: 0,
         pool: 0,
+        stack_size: None,
         affinity,
     })
 }
@@ -65,6 +68,7 @@ pub fn single_pool_one_to_one<'a>(
         name: thread_name.map(ToOwned::to_owned),
         ident: idx,
         pool: 0,
+        stack_size: None,
         affinity: Some(idx),
     })
 }
@@ -84,6 +88,7 @@ pub fn single_pool_two_to_one<'a>(
         name: thread_name.map(ToOwned::to_owned),
         ident: idx,
         pool: 0,
+        stack_size: None,
         affinity: Some(idx / 2),
     })
 }
@@ -108,6 +113,7 @@ pub fn double_pool_one_to_one<'a>(
         name: thread_name.map(ToOwned::to_owned),
         ident: idx,
         pool: (idx % 2) as u8,
+        stack_size: None,
         affinity: Some(idx),
     })
 }
@@ -132,6 +138,7 @@ pub fn double_pool_two_to_one<'a>(
         name: thread_name.map(ToOwned::to_owned),
         ident: idx,
         pool: (idx % 2) as u8,
+        stack_size: None,
         affinity: Some(idx / 2),
     })
 }
