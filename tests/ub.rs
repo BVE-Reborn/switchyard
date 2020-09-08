@@ -50,7 +50,8 @@ struct HeldWaker {
 impl Future for HeldWaker {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    #[allow(unused_mut)] // platforms seem to disagree if this should be mut or not, no idea why.
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         *self.waker.upgrade().unwrap().lock() = Some(cx.waker().clone());
         Poll::Pending
     }
