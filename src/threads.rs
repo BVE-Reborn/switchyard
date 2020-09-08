@@ -21,7 +21,8 @@ pub struct ThreadAllocationOutput {
     pub ident: usize,
     /// Job pool index that the thread services.
     pub pool: Pool,
-    /// Core index to pin thread to.
+    /// Core index to pin thread to. If a platform doesn't support affinity, will have
+    /// no effect. Currently only windows and linux support affinities.
     pub affinity: Option<usize>,
 }
 
