@@ -6,13 +6,14 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     strategy:
       matrix:
         rust_version: [stable, "1.46.0"]
+        os: [windows-latest, macos-latest, ubuntu-latest]
       fail-fast: false
+    runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v1
