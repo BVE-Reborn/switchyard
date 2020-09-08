@@ -49,11 +49,22 @@ pub struct JoinHandle<T: 'static> {
     receiver_future: ChannelReceiveFuture<RawMutex, T>,
 }
 impl<T: 'static> Future for JoinHandle<T> {
-    type Output = Option<T>;
+    type Output = T;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
         let fut = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().receiver_future) };
-        fut.poll(ctx)
+        let poll_res = fut.poll(ctx);
+
+        match poll_res {
+            Poll::Ready(None) => {
+                // If this returns ready with none, that means the channel was closed
+                // due to the waker dying. We can just return pending  as this future will never
+                // return.
+                Poll::Pending
+            }
+            Poll::Ready(Some(value)) => Poll::Ready(value),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
