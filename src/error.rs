@@ -1,6 +1,7 @@
 use crate::MAX_POOLS;
 use std::{error::Error, fmt};
 
+/// Errors encountered when creating a [`Switchyard`](crate::Switchyard).
 #[derive(Debug)]
 pub enum SwitchyardCreationError {
     InvalidPoolIndex {
