@@ -34,9 +34,12 @@ jobs:
         cargo clippy -- -D warnings
       if: matrix.rust_version == 'stable'
 
-    - name: Cargo Deny
-      uses: EmbarkStudios/cargo-deny-action@v1
-      with:
-        log-level: deny
-        command: check
-        arguments: --all-features
+  cargo-deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          log-level: deny
+          command: check
+          arguments: --all-features
