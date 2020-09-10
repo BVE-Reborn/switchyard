@@ -33,3 +33,10 @@ jobs:
         cargo fmt -- --check
         cargo clippy -- -D warnings
       if: matrix.rust_version == 'stable'
+
+    - name: Cargo Deny
+      uses: EmbarkStudios/cargo-deny-action@v1
+      with:
+        log-level: deny
+        command: check
+        arguments: --all-features
