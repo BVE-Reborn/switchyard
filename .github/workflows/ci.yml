@@ -41,7 +41,7 @@ jobs:
 
       - name: Set up Rust toolchain
         run: |
-          rustup default stable
+          rustup default nightly
           rustup component add rustfmt
 
       - name: Rustfmt
