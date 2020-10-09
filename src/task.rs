@@ -90,7 +90,10 @@ pub(crate) struct Task<TD> {
     pub pool: Pool,
     pub priority: Priority,
 }
-impl<TD> Task<TD> {
+impl<TD> Task<TD>
+where
+    TD: 'static,
+{
     pub fn new<Fut>(shared: Arc<Shared<TD>>, future: Fut, pool: Pool, priority: Priority) -> Arc<Self>
     where
         Fut: Future<Output = ()> + Send + 'static,
@@ -222,7 +225,10 @@ pub(crate) struct ThreadLocalTask<TD> {
     pub pool: Pool,
     pub priority: Priority,
 }
-impl<TD> ThreadLocalTask<TD> {
+impl<TD> ThreadLocalTask<TD>
+where
+    TD: 'static,
+{
     pub fn new<Fut>(
         shared: Arc<Shared<TD>>,
         return_queue: Arc<ThreadLocalQueue<TD>>,
