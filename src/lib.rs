@@ -82,8 +82,6 @@
 #![deny(future_incompatible)]
 #![deny(nonstandard_style)]
 #![deny(rust_2018_idioms)]
-// Rustdoc Warnings
-#![deny(broken_intra_doc_links)]
 
 use crate::{
     task::{Job, Task, ThreadLocalJob, ThreadLocalTask},
