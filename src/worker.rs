@@ -12,6 +12,7 @@ use std::sync::{atomic::Ordering, Arc};
 pub(crate) fn body<TD, TDFunc>(
     shared: Arc<Shared<TD>>,
     thread_info: ThreadAllocationOutput,
+    queue_local_index: usize,
     thread_local_sender: std::sync::mpsc::Sender<ThreadLocalPointer<TD>>,
     thread_local_creator: Arc<TDFunc>,
 ) -> impl FnOnce()
@@ -62,7 +63,13 @@ where
                 }
 
                 // wait for condvar signal
-                queue.cond_var.wait(&mut global_guard);
+                let condvar = &queue.condvars[queue_local_index];
+                // We're behind the global guard when we do this and all access is done behind it.
+                condvar.running.store(false, Ordering::Relaxed);
+
+                condvar.inner.wait(&mut global_guard);
+
+                condvar.running.store(true, Ordering::Relaxed);
 
                 // check if death was requested
                 if shared.death_signal.load(Ordering::Acquire) {
@@ -120,6 +127,7 @@ where
                             fut,
                             thread_info.pool,
                             queue_priority,
+                            queue_local_index,
                         );
                         unsafe { task.poll() };
                     }

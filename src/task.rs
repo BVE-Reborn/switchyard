@@ -197,7 +197,7 @@ impl<TD> ArcWake for Waker<TD> {
 
         let mut queue_guard = queue.inner.lock();
         queue_guard.push(Job::Future(future), arc_self.priority);
-        queue.cond_var.notify_one();
+        queue.notify_one();
         drop(queue_guard);
     }
 }
@@ -224,6 +224,7 @@ pub(crate) struct ThreadLocalTask<TD> {
     pub future_address: usize,
     pub pool: Pool,
     pub priority: Priority,
+    pub queue_local_idx: usize,
 }
 impl<TD> ThreadLocalTask<TD>
 where
@@ -235,6 +236,7 @@ where
         future: Fut,
         pool: Pool,
         priority: Priority,
+        queue_local_idx: usize,
     ) -> Arc<Self>
     where
         Fut: Future<Output = ()> + 'static,
@@ -247,6 +249,7 @@ where
             future: unsafe { SenderSyncer::new(Mutex::new(StoredThreadLocalFuture::new(fut_box))) },
             pool,
             priority,
+            queue_local_idx,
         })
     }
 
@@ -292,6 +295,7 @@ pub(crate) struct ThreadLocalWaker<TD> {
     pub future_key: DefaultKey,
     pub pool: Pool,
     pub priority: Priority,
+    pub queue_local_idx: usize,
 }
 
 impl<TD> ThreadLocalWaker<TD> {
@@ -309,6 +313,7 @@ impl<TD> ThreadLocalWaker<TD> {
                 future_key,
                 pool: task.pool,
                 priority: task.priority,
+                queue_local_idx: task.queue_local_idx,
             }),
             future_key,
         )
@@ -349,7 +354,7 @@ impl<TD> ArcWake for ThreadLocalWaker<TD> {
         // Lock local mutex for modification
         let mut local_guard = local_queue.inner.lock();
         local_guard.push(ThreadLocalJob::Future(future), arc_self.priority);
-        global_queue.cond_var.notify_one();
+        global_queue.condvars[arc_self.queue_local_idx].inner.notify_one();
         drop(global_guard);
     }
 }

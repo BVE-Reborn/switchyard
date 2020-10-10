@@ -160,10 +160,34 @@ struct ThreadLocalQueue<TD> {
     waiting: Mutex<DenseSlotMap<DefaultKey, Arc<ThreadLocalTask<TD>>>>,
     inner: Mutex<PriorityQueue<ThreadLocalJob<TD>, u32>>,
 }
+struct FlaggedCondvar {
+    running: AtomicBool,
+    inner: Condvar,
+}
 struct Queue<TD> {
     waiting: Mutex<DenseSlotMap<DefaultKey, Arc<Task<TD>>>>,
     inner: Mutex<PriorityQueue<Job<TD>, u32>>,
-    cond_var: Condvar,
+    condvars: Vec<FlaggedCondvar>,
+}
+impl<TD> Queue<TD> {
+    /// Must be called with `queue.inner`'s lock held.
+    fn notify_one(&self) {
+        for var in &self.condvars {
+            if !var.running.load(Ordering::Relaxed) {
+                var.inner.notify_one();
+                return;
+            }
+        }
+    }
+
+    /// Must be called with `queue.inner`'s lock held.
+    fn notify_all(&self) {
+        // We could be more efficient and not notify everyone, but this is more surefire
+        // and this function is only called on shutdown.
+        for var in &self.condvars {
+            var.inner.notify_all();
+        }
+    }
 }
 type Queues<TD> = ArrayVec<[Queue<TD>; MAX_POOLS as usize]>;
 
@@ -232,12 +256,12 @@ impl<TD: 'static> Switchyard<TD> {
             }
         }
 
-        let shared = Arc::new(Shared {
+        let mut shared = Arc::new(Shared {
             queues: (0..pool_count)
                 .map(|_| Queue {
                     waiting: Mutex::new(DenseSlotMap::new()),
                     inner: Mutex::new(PriorityQueue::new()),
-                    cond_var: Condvar::new(),
+                    condvars: Vec::new(),
                 })
                 .collect::<Queues<TD>>(),
             active_threads: AtomicUsize::new(allocation_vec.len()),
@@ -246,8 +270,25 @@ impl<TD: 'static> Switchyard<TD> {
             death_signal: AtomicBool::new(false),
         });
 
+        let shared_guard = Arc::get_mut(&mut shared).unwrap();
+
+        let queue_local_indices: Vec<_> = allocation_vec
+            .iter()
+            .map(|thread_info| {
+                let condvar_array = &mut shared_guard.queues[thread_info.pool as usize].condvars;
+
+                let queue_local_index = condvar_array.len();
+                condvar_array.push(FlaggedCondvar {
+                    inner: Condvar::new(),
+                    running: AtomicBool::new(true),
+                });
+
+                queue_local_index
+            })
+            .collect();
+
         let mut threads = Vec::with_capacity(allocation_vec.len());
-        for mut thread_info in allocation_vec {
+        for (mut thread_info, queue_local_index) in allocation_vec.into_iter().zip(queue_local_indices) {
             let builder = std::thread::Builder::new();
             let builder = if let Some(name) = thread_info.name.take() {
                 builder.name(name)
@@ -259,11 +300,13 @@ impl<TD: 'static> Switchyard<TD> {
             } else {
                 builder
             };
+
             threads.push(
                 builder
                     .spawn(worker::body::<TD, TDFunc>(
                         Arc::clone(&shared),
                         thread_info,
+                        queue_local_index,
                         thread_local_sender.clone(),
                         thread_local_data_creation_arc.clone(),
                     ))
@@ -358,7 +401,8 @@ impl<TD: 'static> Switchyard<TD> {
 
         let mut queue_guard = queue.inner.lock();
         queue_guard.push(job, priority);
-        queue.cond_var.notify_one();
+        // the required guard is held in `queue_guard`
+        queue.notify_one();
         drop(queue_guard);
 
         JoinHandle {
@@ -434,7 +478,8 @@ impl<TD: 'static> Switchyard<TD> {
 
         let mut queue_guard = queue.inner.lock();
         queue_guard.push(job, priority);
-        queue.cond_var.notify_one();
+        // the required guard is held in `queue_guard`
+        queue.notify_one();
         drop(queue_guard);
 
         JoinHandle {
@@ -562,7 +607,7 @@ impl<TD: 'static> Switchyard<TD> {
         self.shared.death_signal.store(true, Ordering::Release);
         for queue in &self.shared.queues {
             let lock = queue.inner.lock();
-            queue.cond_var.notify_all();
+            queue.notify_all();
             drop(lock);
         }
 

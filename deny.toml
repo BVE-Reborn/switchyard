@@ -15,8 +15,6 @@ multiple-versions = "deny"
 skip = [
     # parking_lot
     { name = "lock_api", version = "0.3.4" },
-    # async-std
-    { name = "parking", version = "1.0.6" },
 ]
 
 [advisories]
