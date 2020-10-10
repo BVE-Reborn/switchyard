@@ -98,7 +98,9 @@ use parking_lot::{Condvar, Mutex, RawMutex};
 use priority_queue::PriorityQueue;
 use slotmap::{DefaultKey, DenseSlotMap};
 use std::{
+    any::Any,
     future::Future,
+    panic::{catch_unwind, AssertUnwindSafe, UnwindSafe},
     pin::Pin,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -131,8 +133,8 @@ pub type PoolCount = u8;
 ///
 /// Awaiting this future will give the return value of the task.
 pub struct JoinHandle<T: 'static> {
-    _receiver: OneshotReceiver<T>,
-    receiver_future: ChannelReceiveFuture<RawMutex, T>,
+    _receiver: OneshotReceiver<Result<T, Box<dyn Any + Send + 'static>>>,
+    receiver_future: ChannelReceiveFuture<RawMutex, Result<T, Box<dyn Any + Send + 'static>>>,
 }
 impl<T: 'static> Future for JoinHandle<T> {
     type Output = T;
@@ -148,9 +150,33 @@ impl<T: 'static> Future for JoinHandle<T> {
                 // return.
                 Poll::Pending
             }
-            Poll::Ready(Some(value)) => Poll::Ready(value),
+            Poll::Ready(Some(value)) => Poll::Ready(value.unwrap_or_else(|_| panic!("Job panicked!"))),
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+/// Vendored from futures-util as holy hell that's a large lib.
+struct CatchUnwind<Fut>(Fut);
+
+impl<Fut> CatchUnwind<Fut>
+where
+    Fut: Future + UnwindSafe,
+{
+    fn new(future: Fut) -> CatchUnwind<Fut> {
+        CatchUnwind(future)
+    }
+}
+
+impl<Fut> Future for CatchUnwind<Fut>
+where
+    Fut: Future + UnwindSafe,
+{
+    type Output = Result<Fut::Output, Box<dyn Any + Send>>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let f = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().0) };
+        catch_unwind(AssertUnwindSafe(|| f.poll(cx)))?.map(Ok)
     }
 }
 
@@ -389,7 +415,7 @@ impl<TD: 'static> Switchyard<TD> {
             async move {
                 // We don't care about the result, if this fails, that just means the join handle
                 // has been dropped.
-                let _ = sender.send(fut.await);
+                let _ = sender.send(CatchUnwind::new(std::panic::AssertUnwindSafe(fut)).await);
             },
             pool,
             priority,
@@ -468,7 +494,16 @@ impl<TD: 'static> Switchyard<TD> {
             Box::pin(async move {
                 // We don't care about the result, if this fails, that just means the join handle
                 // has been dropped.
-                let _ = sender.send(async_fn(td).await);
+                let unwind_async_fn = AssertUnwindSafe(async_fn);
+                let unwind_td = AssertUnwindSafe(td);
+                let future = catch_unwind(move || AssertUnwindSafe(unwind_async_fn.0(unwind_td.0)));
+
+                let ret = match future {
+                    Ok(fut) => CatchUnwind::new(AssertUnwindSafe(fut)).await,
+                    Err(panic) => Err(panic),
+                };
+
+                let _ = sender.send(ret);
             })
         }));
 
