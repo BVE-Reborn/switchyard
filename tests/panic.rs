@@ -44,6 +44,9 @@ fn continue_from_panicking_future() {
     yard.spawn(0, 0, async move {
         panic!("whoops!");
     });
+
+    futures_executor::block_on(yard.wait_for_idle());
+
     let handle = yard.spawn(0, 0, async move { 1 });
 
     assert_eq!(futures_executor::block_on(handle), 1);
