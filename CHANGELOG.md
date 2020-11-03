@@ -13,7 +13,7 @@ and this project adheres to cargo's version of [Semantic Versioning](https://sem
 
 ## v0.1.0
 
-Released 2019-08-09
+Released 2029-10-02
 
 #### Added
 - First release of `switchyard`.
