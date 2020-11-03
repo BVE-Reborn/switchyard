@@ -15,6 +15,10 @@ multiple-versions = "deny"
 skip = [
     # parking_lot
     { name = "lock_api", version = "0.3.4" },
+    # like everything
+    { name = "cfg-if", version = "0.1.10" },
+    # async-std
+    { name = "crossbeam-utils", version = "0.7.2" }
 ]
 
 [advisories]
