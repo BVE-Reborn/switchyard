@@ -20,7 +20,7 @@ bitflags = "1"
 futures-intrusive = "0.3"
 futures-task = "0.3"
 num_cpus = "1"
-parking_lot = "0.10"
+parking_lot = "0.11"
 priority-queue = "1"
 slotmap = "0.4"
 
