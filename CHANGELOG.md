@@ -11,13 +11,22 @@ and this project adheres to cargo's version of [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.1.1
+
+Released 2020-11-21
+
+#### Updated
+- Updated `parking_lot` to `0.11`
+- Updated `futures-intrusive` to `0.4`
+
 ## v0.1.0
 
-Released 2029-10-02
+Released 2020-10-02
 
 #### Added
 - First release of `switchyard`.
 
 ## Diffs
 
-- [Unreleased](https://github.com/BVE-Reborn/switchyard/compare/v0.1.0...HEAD)
+- [Unreleased](https://github.com/BVE-Reborn/switchyard/compare/v0.1.1...HEAD)
+- [v0.1.1](https://github.com/BVE-Reborn/switchyard/compare/v0.1.0...v0.1.1)
