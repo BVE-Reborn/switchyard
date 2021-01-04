@@ -22,7 +22,7 @@ futures-task = "0.3"
 num_cpus = "1"
 parking_lot = "0.11"
 priority-queue = "1"
-slotmap = "0.4"
+slotmap = "1.0"
 
 [target.'cfg(any(target_os = "windows", target_os = "linux"))'.dependencies]
 affinity = "0.1"
