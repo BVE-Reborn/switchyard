@@ -5,7 +5,6 @@
 //! ```rust
 //! use switchyard::Switchyard;
 //! use switchyard::threads::{thread_info, single_pool_one_to_one};
-//!
 //! // Create a new switchyard with one job pool and empty thread local data
 //! let yard = Switchyard::new(1, single_pool_one_to_one(thread_info(), Some("thread-name")), ||()).unwrap();
 //!
@@ -33,7 +32,6 @@
 //! ```rust
 //! # use switchyard::{Switchyard, threads::{thread_info, single_pool_one_to_one}};
 //! # let yard = Switchyard::new(1, single_pool_one_to_one(thread_info(), Some("thread-name")), ||()).unwrap();
-//!
 //! // Spawn task with lowest priority.
 //! yard.spawn(0, 0, async move { /* ... */ });
 //! // Spawn task with higher priority. If both tasks are waiting, this one will run first.
@@ -49,7 +47,6 @@
 //! ```rust
 //! # use switchyard::{Switchyard, threads::thread_info};
 //! # use switchyard::threads::double_pool_two_to_one;
-//!
 //! // Create a yard with two job pools. Each logical core gets two threads, one per pool.
 //! let yard = Switchyard::new(2, double_pool_two_to_one(thread_info(), Some("thread-name")), ||()).unwrap();
 //!
@@ -71,13 +68,17 @@
 //! ```rust
 //! # use switchyard::{Switchyard, threads::{thread_info, single_pool_one_to_one}};
 //! # use std::cell::Cell;
-//!
 //! // Create yard with thread local data. The data is !Sync.
 //! let yard = Switchyard::new(1, single_pool_one_to_one(thread_info(), Some("thread-name")), || Cell::new(42)).unwrap();
 //!
 //! // Spawn task that uses thread local data. Each running thread will get their own copy.
 //! yard.spawn_local(0, 0, |data| async move { data.set(10) });
 //! ```
+//!
+//! # MSRV
+//! 1.51
+//!
+//! Future MSRV bumps will be breaking changes.
 
 #![deny(future_incompatible)]
 #![deny(nonstandard_style)]
@@ -213,7 +214,7 @@ impl<TD> Queue<TD> {
         }
     }
 }
-type Queues<TD> = ArrayVec<[Queue<TD>; MAX_POOLS as usize]>;
+type Queues<TD> = ArrayVec<Queue<TD>, { MAX_POOLS as usize }>;
 
 struct Shared<TD> {
     active_threads: AtomicUsize,

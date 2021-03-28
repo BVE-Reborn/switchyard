@@ -12,6 +12,18 @@ and this project adheres to cargo's version of [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.1.2
+
+Released 2021-03-28
+
+#### Added
+MSRV of 1.51
+
+#### Updated
+- Updated `arrayvec` to `0.6`
+- Updated `flume` to `0.10`
+- Updated `slotmap` to `1.0`
+
 ## v0.1.1
 
 Released 2020-11-21

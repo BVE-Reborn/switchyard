@@ -15,13 +15,14 @@ multiple-versions = "deny"
 skip = [
     # like everything
     { name = "cfg-if", version = "0.1.10" },
+    # dev-deps
+    { name = "itertools", version = "0.9" },
 ]
 
 [advisories]
 vulnerability = "deny"
 unmaintained = "deny"
 ignore = [
-    'RUSTSEC-2020-0056'
 ]
 
 [sources]
