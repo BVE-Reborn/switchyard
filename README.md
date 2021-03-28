@@ -12,7 +12,6 @@ Real-time compute-focused async executor with job pools, thread-local data, and 
 ```rust
 use switchyard::Switchyard;
 use switchyard::threads::{thread_info, single_pool_one_to_one};
-
 // Create a new switchyard with one job pool and empty thread local data
 let yard = Switchyard::new(1, single_pool_one_to_one(thread_info(), Some("thread-name")), ||()).unwrap();
 
@@ -74,5 +73,10 @@ let yard = Switchyard::new(1, single_pool_one_to_one(thread_info(), Some("thread
 // Spawn task that uses thread local data. Each running thread will get their own copy.
 yard.spawn_local(0, 0, |data| async move { data.set(10) });
 ```
+
+## MSRV
+1.51
+
+Future MSRV bumps will be breaking changes.
 
 License: MIT OR Apache-2.0 OR Zlib

@@ -10,7 +10,7 @@ jobs:
 
     strategy:
       matrix:
-        rust_version: [stable, "1.46.0"]
+        rust_version: [stable, "1.51.0"]
         os: [windows-latest, macos-latest, ubuntu-latest]
       fail-fast: false
     runs-on: ${{ matrix.os }}
