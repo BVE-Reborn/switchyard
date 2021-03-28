@@ -13,7 +13,7 @@ and this project adheres to cargo's version of [Semantic Versioning](https://sem
 
 ## Unreleased
 
-## v0.1.2
+## v0.2.0
 
 Released 2021-03-28
 
