@@ -19,6 +19,7 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: Set up Rust toolchain
+      id: setup-rust
       uses: actions-rs/toolchain@v1
       with:
         profile: minimal
@@ -31,9 +32,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ matrix.os }}-${{ rustc_hash }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ matrix.os }}-${{ steps.setup-rust.rustc_hash }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ matrix.os }}-${{ rustc_hash }}-cargo-
+          ${{ matrix.os }}-${{ steps.setup-rust.rustc_hash }}-cargo-
 
     - uses: actions-rs/cargo@v1
       with:
