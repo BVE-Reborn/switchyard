@@ -77,7 +77,7 @@
 //!
 //! # MSRV
 //! 1.51
-//! 
+//!
 //! Future MSRV bumps will be breaking changes.
 
 #![deny(future_incompatible)]
