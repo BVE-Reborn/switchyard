@@ -18,7 +18,7 @@ and this project adheres to cargo's version of [Semantic Versioning](https://sem
 Released 2021-03-28
 
 #### Added
-MSRV of 1.51
+- MSRV of 1.51
 
 #### Updated
 - Updated `arrayvec` to `0.6`
