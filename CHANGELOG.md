@@ -6,12 +6,20 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 and this project adheres to cargo's version of [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - [Unreleased](#unreleased)
-- [v0.2.0](#v011)
+- [v0.2.1](#v021)
+- [v0.2.0](#v020)
 - [v0.1.1](#v011)
 - [v0.1.0](#v010)
 - [Diffs](#diffs)
 
 ## Unreleased
+
+## v0.2.1
+
+Released 2021-04-09
+
+#### Updated
+- Updated `arrayvec` to `0.7`
 
 ## v0.2.0
 
@@ -42,6 +50,7 @@ Released 2020-10-02
 
 ## Diffs
 
-- [Unreleased](https://github.com/BVE-Reborn/switchyard/compare/v0.2.0...HEAD)
+- [Unreleased](https://github.com/BVE-Reborn/switchyard/compare/v0.2.1...HEAD)
+- [v0.2.1](https://github.com/BVE-Reborn/switchyard/compare/v0.2.0...v0.2.1)
 - [v0.2.0](https://github.com/BVE-Reborn/switchyard/compare/v0.1.1...v0.2.0)
 - [v0.1.1](https://github.com/BVE-Reborn/switchyard/compare/v0.1.0...v0.1.1)
