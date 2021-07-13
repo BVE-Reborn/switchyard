@@ -9,13 +9,3 @@ updates:
   open-pull-requests-limit: 10
   labels:
   - dependency
-  ignore:
-  - dependency-name: arrayvec
-    versions:
-    - 0.6.0
-  - dependency-name: slotmap
-    versions:
-    - 1.0.1
-  - dependency-name: flume
-    versions:
-    - 0.10.0
