@@ -4,14 +4,14 @@
 //!
 //! ```rust
 //! use switchyard::Switchyard;
-//! use switchyard::threads::{thread_info, single_pool_one_to_one};
+//! use switchyard::threads::{thread_info, one_to_one};
 //! // Create a new switchyard with one job pool and empty thread local data
-//! let yard = Switchyard::new(1, single_pool_one_to_one(thread_info(), Some("thread-name")), ||()).unwrap();
+//! let yard = Switchyard::new(one_to_one(thread_info(), Some("thread-name")), ||()).unwrap();
 //!
 //! // Spawn a task on pool 0 and priority 10 and get a JoinHandle
-//! let handle = yard.spawn(0, 10, async move { 5 + 5 });
+//! let handle = yard.spawn(10, async move { 5 + 5 });
 //! // Spawn a lower priority task on the same pool
-//! let handle2 = yard.spawn(0, 0, async move { 2 + 2 });
+//! let handle2 = yard.spawn(0, async move { 2 + 2 });
 //!
 //! // Wait on the results
 //! # futures_executor::block_on(async {
@@ -30,30 +30,12 @@
 //! Each task has a priority and tasks are ran in order from high priority to low priority.
 //!
 //! ```rust
-//! # use switchyard::{Switchyard, threads::{thread_info, single_pool_one_to_one}};
-//! # let yard = Switchyard::new(1, single_pool_one_to_one(thread_info(), Some("thread-name")), ||()).unwrap();
+//! # use switchyard::{Switchyard, threads::{thread_info, one_to_one}};
+//! # let yard = Switchyard::new(one_to_one(thread_info(), Some("thread-name")), ||()).unwrap();
 //! // Spawn task with lowest priority.
-//! yard.spawn(0, 0, async move { /* ... */ });
+//! yard.spawn(0, async move { /* ... */ });
 //! // Spawn task with higher priority. If both tasks are waiting, this one will run first.
-//! yard.spawn(0, 10, async move { /* ... */ });
-//! ```
-//!
-//! ## Job Pools
-//!
-//! Inside each yard there can be multiple (up to [`MAX_POOLS`]) different "job pools". Each thread in
-//! the pool is dedicated to a single pool. By having multiple pools, it can help prevent executor
-//! exhaustion.
-//!
-//! ```rust
-//! # use switchyard::{Switchyard, threads::thread_info};
-//! # use switchyard::threads::double_pool_two_to_one;
-//! // Create a yard with two job pools. Each logical core gets two threads, one per pool.
-//! let yard = Switchyard::new(2, double_pool_two_to_one(thread_info(), Some("thread-name")), ||()).unwrap();
-//!
-//! // Spawn task on pool 0.
-//! yard.spawn(0, 0, async move { /* ... */ });
-//! // Spawn task on pool 1.
-//! yard.spawn(1, 0, async move { /* ... */ });
+//! yard.spawn(10, async move { /* ... */ });
 //! ```
 //!
 //! ## Thread Local Data
@@ -66,13 +48,13 @@
 //! a vector of mutable references to all thread's data. See it's documentation for more information.
 //!
 //! ```rust
-//! # use switchyard::{Switchyard, threads::{thread_info, single_pool_one_to_one}};
+//! # use switchyard::{Switchyard, threads::{thread_info, one_to_one}};
 //! # use std::cell::Cell;
 //! // Create yard with thread local data. The data is !Sync.
-//! let yard = Switchyard::new(1, single_pool_one_to_one(thread_info(), Some("thread-name")), || Cell::new(42)).unwrap();
+//! let yard = Switchyard::new(one_to_one(thread_info(), Some("thread-name")), || Cell::new(42)).unwrap();
 //!
 //! // Spawn task that uses thread local data. Each running thread will get their own copy.
-//! yard.spawn_local(0, 0, |data| async move { data.set(10) });
+//! yard.spawn_local(0, |data| async move { data.set(10) });
 //! ```
 //!
 //! # MSRV
@@ -89,7 +71,6 @@ use crate::{
     threads::ThreadAllocationOutput,
     util::ThreadLocalPointer,
 };
-use arrayvec::ArrayVec;
 use futures_intrusive::{
     channel::shared::{oneshot_channel, ChannelReceiveFuture, OneshotReceiver},
     sync::ManualResetEvent,
@@ -118,15 +99,8 @@ mod worker;
 
 pub use error::*;
 
-/// Maximum job pools an executor has.
-///
-/// This is a constant because it allows inline storage of queues.
-pub const MAX_POOLS: PoolCount = 8;
-
 /// Integer alias for a priority.
 pub type Priority = u32;
-/// Integer alias for a pool index.
-pub type Pool = u8;
 /// Integer alias for the maximum amount of pools.
 pub type PoolCount = u8;
 
@@ -214,14 +188,13 @@ impl<TD> Queue<TD> {
         }
     }
 }
-type Queues<TD> = ArrayVec<Queue<TD>, { MAX_POOLS as usize }>;
 
 struct Shared<TD> {
     active_threads: AtomicUsize,
     idle_wait: ManualResetEvent,
     job_count: AtomicUsize,
     death_signal: AtomicBool,
-    queues: Queues<TD>,
+    queue: Queue<TD>,
 }
 
 /// Compute focused async executor.
@@ -235,8 +208,6 @@ pub struct Switchyard<TD: 'static> {
 impl<TD: 'static> Switchyard<TD> {
     /// Create a new switchyard.
     ///
-    /// Will create `pool_count` job pools.
-    ///
     /// For each element in the provided `thread_allocations` iterator, the yard will spawn a worker
     /// thread with the given settings. Helper functions in [`threads`] can generate these iterators
     /// for common situations.
@@ -244,33 +215,19 @@ impl<TD: 'static> Switchyard<TD> {
     /// `thread_local_data_creation` will be called on each thread to create the thread local
     /// data accessible by `spawn_local`.
     pub fn new<TDFunc>(
-        pool_count: Pool,
         thread_allocations: impl IntoIterator<Item = ThreadAllocationOutput>,
         thread_local_data_creation: TDFunc,
     ) -> Result<Self, SwitchyardCreationError>
     where
         TDFunc: Fn() -> TD + Send + Sync + 'static,
     {
-        if pool_count >= MAX_POOLS {
-            return Err(SwitchyardCreationError::TooManyPools {
-                pools_requested: pool_count,
-            });
-        }
-
         let (thread_local_sender, thread_local_receiver) = std::sync::mpsc::channel();
 
         let thread_local_data_creation_arc = Arc::new(thread_local_data_creation);
         let allocation_vec: Vec<_> = thread_allocations.into_iter().collect();
 
         let num_logical_cpus = num_cpus::get();
-        for (idx, allocation) in allocation_vec.iter().enumerate() {
-            if allocation.pool >= pool_count {
-                return Err(SwitchyardCreationError::InvalidPoolIndex {
-                    thread_idx: idx,
-                    pool_idx: allocation.pool,
-                    total_pools: pool_count,
-                });
-            }
+        for allocation in allocation_vec.iter() {
             if let Some(affin) = allocation.affinity {
                 if affin >= num_logical_cpus {
                     return Err(SwitchyardCreationError::InvalidAffinity {
@@ -282,13 +239,11 @@ impl<TD: 'static> Switchyard<TD> {
         }
 
         let mut shared = Arc::new(Shared {
-            queues: (0..pool_count)
-                .map(|_| Queue {
-                    waiting: Mutex::new(DenseSlotMap::new()),
-                    inner: Mutex::new(PriorityQueue::new()),
-                    condvars: Vec::new(),
-                })
-                .collect::<Queues<TD>>(),
+            queue: Queue {
+                waiting: Mutex::new(DenseSlotMap::new()),
+                inner: Mutex::new(PriorityQueue::new()),
+                condvars: Vec::new(),
+            },
             active_threads: AtomicUsize::new(allocation_vec.len()),
             idle_wait: ManualResetEvent::new(false),
             job_count: AtomicUsize::new(0),
@@ -299,8 +254,8 @@ impl<TD: 'static> Switchyard<TD> {
 
         let queue_local_indices: Vec<_> = allocation_vec
             .iter()
-            .map(|thread_info| {
-                let condvar_array = &mut shared_guard.queues[thread_info.pool as usize].condvars;
+            .map(|_| {
+                let condvar_array = &mut shared_guard.queue.condvars;
 
                 let queue_local_index = condvar_array.len();
                 condvar_array.push(FlaggedCondvar {
@@ -354,16 +309,10 @@ impl<TD: 'static> Switchyard<TD> {
     }
 
     /// Things that must be done every time a task is spawned
-    fn spawn_header(&self, pool: Pool) {
+    fn spawn_header(&self) {
         assert!(
             !self.shared.death_signal.load(Ordering::Acquire),
             "finish() has been called on this Switchyard. No more jobs may be added."
-        );
-        assert!(
-            (pool as usize) < self.shared.queues.len(),
-            "pool {} refers to a non-existant pool. Total pools: {}",
-            pool,
-            self.shared.queues.len()
         );
 
         // SAFETY: we must grab and increment this counter so `access_per_thread_data` knows
@@ -377,21 +326,20 @@ impl<TD: 'static> Switchyard<TD> {
         self.shared.idle_wait.reset();
     }
 
-    /// Spawn a future which can migrate between threads during execution to the given job `pool` at
-    /// the given `priority`.
+    /// Spawn a future which can migrate between threads during executionat the given `priority`.
     ///
     /// A higher `priority` will cause the task to be run sooner.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use switchyard::{Switchyard, threads::single_pool_single_thread};
+    /// use switchyard::{Switchyard, threads::single_thread};
     ///
     /// // Create a yard with a single pool
-    /// let yard: Switchyard<()> = Switchyard::new(1, single_pool_single_thread(None, None), || ()).unwrap();
+    /// let yard: Switchyard<()> = Switchyard::new(single_thread(None, None), || ()).unwrap();
     ///
-    /// // Spawn a task on pool 0 and with priority 0 and get a handle to the result.
-    /// let handle = yard.spawn(0, 0, async move { 2 * 2 });
+    /// // Spawn a task with priority 0 and get a handle to the result.
+    /// let handle = yard.spawn(0, async move { 2 * 2 });
     ///
     /// // Await result
     /// # futures_executor::block_on(async move {
@@ -401,14 +349,13 @@ impl<TD: 'static> Switchyard<TD> {
     ///
     /// # Panics
     ///
-    /// - `pool` refers to a non-existent job pool.
     /// - [`finish`](Switchyard::finish) has been called on the pool.
-    pub fn spawn<Fut, T>(&self, pool: Pool, priority: Priority, fut: Fut) -> JoinHandle<T>
+    pub fn spawn<Fut, T>(&self, priority: Priority, fut: Fut) -> JoinHandle<T>
     where
         Fut: Future<Output = T> + Send + 'static,
         T: Send + 'static,
     {
-        self.spawn_header(pool);
+        self.spawn_header();
 
         let (sender, receiver) = oneshot_channel();
         let job = Job::Future(Task::new(
@@ -418,11 +365,10 @@ impl<TD: 'static> Switchyard<TD> {
                 // has been dropped.
                 let _ = sender.send(CatchUnwind::new(std::panic::AssertUnwindSafe(fut)).await);
             },
-            pool,
             priority,
         ));
 
-        let queue: &Queue<TD> = &self.shared.queues[pool as usize];
+        let queue: &Queue<TD> = &self.shared.queue;
 
         let mut queue_guard = queue.inner.lock();
         queue_guard.push(job, priority);
@@ -450,18 +396,17 @@ impl<TD: 'static> Switchyard<TD> {
     ///
     /// ```rust
     /// use std::{cell::Cell, sync::Arc};
-    /// use switchyard::{Switchyard, threads::single_pool_single_thread};
+    /// use switchyard::{Switchyard, threads::single_thread};
     ///
     /// // Create a yard with thread local data.
     /// let yard: Switchyard<Cell<u64>> = Switchyard::new(
-    ///     1,
-    ///     single_pool_single_thread(None, None),
+    ///     single_thread(None, None),
     ///     || Cell::new(42)
     /// ).unwrap();
     /// # let mut yard = yard;
     ///
     /// // Spawn an async function using the data.
-    /// yard.spawn_local(0, 0, |data: Arc<Cell<u64>>| async move {data.set(12);});
+    /// yard.spawn_local(0, |data: Arc<Cell<u64>>| async move {data.set(12);});
     /// # futures_executor::block_on(yard.wait_for_idle());
     /// # assert_eq!(yard.access_per_thread_data(), Some(vec![&mut Cell::new(12)]));
     ///
@@ -471,7 +416,7 @@ impl<TD: 'static> Switchyard<TD> {
     /// }
     ///
     /// // Works with normal async functions too
-    /// let handle = yard.spawn_local(0, 0, some_async);
+    /// let handle = yard.spawn_local(0, some_async);
     /// # futures_executor::block_on(yard.wait_for_idle());
     /// # assert_eq!(yard.access_per_thread_data(), Some(vec![&mut Cell::new(15)]));
     /// # futures_executor::block_on(async move {
@@ -482,13 +427,13 @@ impl<TD: 'static> Switchyard<TD> {
     /// # Panics
     ///
     /// - Panics is `pool` refers to a non-existent job pool.
-    pub fn spawn_local<Func, Fut, T>(&self, pool: Pool, priority: Priority, async_fn: Func) -> JoinHandle<T>
+    pub fn spawn_local<Func, Fut, T>(&self, priority: Priority, async_fn: Func) -> JoinHandle<T>
     where
         Func: FnOnce(Arc<TD>) -> Fut + Send + 'static,
         Fut: Future<Output = T>,
         T: Send + 'static,
     {
-        self.spawn_header(pool);
+        self.spawn_header();
 
         let (sender, receiver) = oneshot_channel();
         let job = Job::Local(Box::new(move |td| {
@@ -508,7 +453,7 @@ impl<TD: 'static> Switchyard<TD> {
             })
         }));
 
-        let queue: &Queue<TD> = &self.shared.queues[pool as usize];
+        let queue: &Queue<TD> = &self.shared.queue;
 
         let mut queue_guard = queue.inner.lock();
         queue_guard.push(job, priority);
@@ -568,12 +513,11 @@ impl<TD: 'static> Switchyard<TD> {
     ///
     /// ```rust
     /// use std::{cell::Cell, sync::Arc};
-    /// use switchyard::{Switchyard, threads::single_pool_single_thread};
+    /// use switchyard::{Switchyard, threads::single_thread};
     ///
     /// // Create a yard with thread local data.
     /// let mut yard: Switchyard<Cell<u64>> = Switchyard::new(
-    ///     1,
-    ///     single_pool_single_thread(None, None),
+    ///     single_thread(None, None),
     ///     || Cell::new(42)
     /// ).unwrap();
     ///
@@ -586,7 +530,7 @@ impl<TD: 'static> Switchyard<TD> {
     /// assert_eq!(yard.access_per_thread_data(), Some(vec![&mut Cell::new(42)]));
     ///
     /// // Launch a task to change that data
-    /// let handle = yard.spawn_local(0, 0, |data| async move { data.set(525_600); });
+    /// let handle = yard.spawn_local(0, |data| async move { data.set(525_600); });
     ///
     /// // If the task isn't finished yet, this will return None.
     /// yard.access_per_thread_data();
@@ -639,11 +583,9 @@ impl<TD: 'static> Switchyard<TD> {
     pub fn finish(&mut self) {
         // send death signal then wake everyone up
         self.shared.death_signal.store(true, Ordering::Release);
-        for queue in &self.shared.queues {
-            let lock = queue.inner.lock();
-            queue.notify_all();
-            drop(lock);
-        }
+        let lock = self.shared.queue.inner.lock();
+        self.shared.queue.notify_all();
+        drop(lock);
 
         self.thread_local_data.clear();
         for thread in self.threads.drain(..) {

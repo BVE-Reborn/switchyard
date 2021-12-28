@@ -15,7 +15,6 @@ name = "scheduling"
 harness = false
 
 [dependencies]
-arrayvec = "0.7"
 bitflags = "1"
 futures-intrusive = "0.4"
 futures-task = "0.3"

@@ -39,7 +39,7 @@ where
             crate::affinity::set_thread_affinity([affin]).unwrap();
         }
 
-        let queue: &Queue<TD> = &shared.queues[thread_info.pool as usize];
+        let queue: &Queue<TD> = &shared.queue;
 
         loop {
             // Always grab global -> local
@@ -125,7 +125,6 @@ where
                             Arc::clone(&shared),
                             Arc::clone(&thread_queue),
                             fut,
-                            thread_info.pool,
                             queue_priority,
                             queue_local_index,
                         );

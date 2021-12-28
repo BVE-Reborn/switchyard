@@ -5,14 +5,14 @@ use std::{
     sync::{Arc, Weak},
     task::{Context, Poll, Waker},
 };
-use switchyard::{threads::single_pool_single_thread, Switchyard};
+use switchyard::{threads::single_thread, Switchyard};
 
 #[test]
 fn held_thread_local_data() {
-    let mut yard = Switchyard::new(1, single_pool_single_thread(None, None), || ()).unwrap();
+    let mut yard = Switchyard::new(single_thread(None, None), || ()).unwrap();
 
     let (sender, receiver) = flume::unbounded();
-    yard.spawn_local(0, 0, |arc| async move {
+    yard.spawn_local(0, |arc| async move {
         sender.send(arc).unwrap();
     });
 
@@ -37,9 +37,9 @@ impl Future for ImmediateWake {
 
 #[test]
 fn immediate_wake() {
-    let yard = Switchyard::new(1, single_pool_single_thread(None, None), || ()).unwrap();
+    let yard = Switchyard::new(single_thread(None, None), || ()).unwrap();
 
-    let handle = yard.spawn(0, 0, ImmediateWake);
+    let handle = yard.spawn(0, ImmediateWake);
 
     futures_executor::block_on(handle);
 }
@@ -59,7 +59,7 @@ impl Future for HeldWaker {
 
 #[test]
 fn held_waker() {
-    let yard = Switchyard::new(1, single_pool_single_thread(None, None), || ()).unwrap();
+    let yard = Switchyard::new(single_thread(None, None), || ()).unwrap();
 
     let waker = Arc::new(Mutex::new(None));
 
@@ -67,7 +67,7 @@ fn held_waker() {
         waker: Arc::downgrade(&waker),
     };
 
-    yard.spawn(0, 0, future);
+    yard.spawn(0, future);
 
     futures_executor::block_on(yard.wait_for_idle());
 

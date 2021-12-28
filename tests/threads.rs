@@ -1,16 +1,14 @@
 use futures_executor::block_on;
 use switchyard::{
-    threads::{single_pool_one_to_one, thread_info},
+    threads::{one_to_one, thread_info},
     Switchyard,
 };
 
 #[test]
 fn ten_thousand() {
-    let yard = Switchyard::new(1, single_pool_one_to_one(thread_info(), None), || ()).unwrap();
+    let yard = Switchyard::new(one_to_one(thread_info(), None), || ()).unwrap();
 
-    let handles: Vec<_> = (0..10_000)
-        .map(|idx| yard.spawn(0, 0, async move { idx * 2 }))
-        .collect();
+    let handles: Vec<_> = (0..10_000).map(|idx| yard.spawn(0, async move { idx * 2 })).collect();
 
     block_on(async {
         for (idx, handle) in handles.into_iter().enumerate() {
