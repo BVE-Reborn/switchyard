@@ -13,16 +13,15 @@ allow = [
 [bans]
 multiple-versions = "deny"
 skip = [
-    # like everything
-    { name = "cfg-if", version = "0.1.10" },
-    # dev-deps
-    { name = "itertools", version = "0.9" },
+    # csv via criterion
+    { name = "itoa", version = "0.4.8" },
 ]
 
 [advisories]
 vulnerability = "deny"
 unmaintained = "deny"
 ignore = [
+    "RUSTSEC-2021-0127" # serde-cbor from criterion
 ]
 
 [sources]
