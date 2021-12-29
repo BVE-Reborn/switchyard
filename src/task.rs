@@ -1,4 +1,4 @@
-use crate::{util::SenderSyncer, Pool, Priority, Queue, Shared, ThreadLocalQueue};
+use crate::{util::SenderSyncer, Priority, Queue, Shared, ThreadLocalQueue};
 use futures_task::ArcWake;
 use parking_lot::Mutex;
 use slotmap::DefaultKey;
@@ -87,14 +87,13 @@ pub(crate) struct Task<TD> {
     pub shared: Arc<Shared<TD>>,
     pub future: Mutex<StoredFuture>,
     pub future_address: usize,
-    pub pool: Pool,
     pub priority: Priority,
 }
 impl<TD> Task<TD>
 where
     TD: 'static,
 {
-    pub fn new<Fut>(shared: Arc<Shared<TD>>, future: Fut, pool: Pool, priority: Priority) -> Arc<Self>
+    pub fn new<Fut>(shared: Arc<Shared<TD>>, future: Fut, priority: Priority) -> Arc<Self>
     where
         Fut: Future<Output = ()> + Send + 'static,
     {
@@ -103,7 +102,6 @@ where
             shared,
             future_address: &*fut_box as *const _ as usize,
             future: Mutex::new(StoredFuture::new(fut_box)),
-            pool,
             priority,
         })
     }
@@ -127,7 +125,7 @@ where
             // is re-awoken _during_ the call to poll which returns Ready(T), we
             // still need to prevent it from running again
 
-            let mut slot_guard = self.shared.queues[self.pool as usize].waiting.lock();
+            let mut slot_guard = self.shared.queue.waiting.lock();
             slot_guard.remove(key);
             drop(slot_guard);
 
@@ -145,13 +143,12 @@ impl<TD> Drop for Task<TD> {
 pub(crate) struct Waker<TD> {
     pub shared: Arc<Shared<TD>>,
     pub future_key: DefaultKey,
-    pub pool: Pool,
     pub priority: Priority,
 }
 
 impl<TD> Waker<TD> {
     fn from_task(task: &Arc<Task<TD>>) -> (Arc<Self>, DefaultKey) {
-        let queue: &Queue<TD> = &task.shared.queues[task.pool as usize];
+        let queue: &Queue<TD> = &task.shared.queue;
 
         let mut waiting_lock = queue.waiting.lock();
         let future_key = waiting_lock.insert(Arc::clone(&task));
@@ -161,7 +158,6 @@ impl<TD> Waker<TD> {
             Arc::new(Self {
                 shared: Arc::clone(&task.shared),
                 future_key,
-                pool: task.pool,
                 priority: task.priority,
             }),
             future_key,
@@ -172,7 +168,7 @@ impl<TD> Waker<TD> {
 impl<TD> Drop for Waker<TD> {
     fn drop(&mut self) {
         // We're the last waker, clean up our task
-        let queue: &Queue<TD> = &self.shared.queues[self.pool as usize];
+        let queue: &Queue<TD> = &self.shared.queue;
 
         let mut waiting_lock = queue.waiting.lock();
         let _ = waiting_lock.remove(self.future_key);
@@ -182,7 +178,7 @@ impl<TD> Drop for Waker<TD> {
 
 impl<TD> ArcWake for Waker<TD> {
     fn wake_by_ref(arc_self: &Arc<Self>) {
-        let queue: &Queue<TD> = &arc_self.shared.queues[arc_self.pool as usize];
+        let queue: &Queue<TD> = &arc_self.shared.queue;
 
         let mut waiting_lock = queue.waiting.lock();
         let future_opt = waiting_lock.remove(arc_self.future_key);
@@ -222,7 +218,6 @@ pub(crate) struct ThreadLocalTask<TD> {
     pub return_queue: Arc<ThreadLocalQueue<TD>>,
     pub future: SenderSyncer<Mutex<StoredThreadLocalFuture>>,
     pub future_address: usize,
-    pub pool: Pool,
     pub priority: Priority,
     pub queue_local_idx: usize,
 }
@@ -234,7 +229,6 @@ where
         shared: Arc<Shared<TD>>,
         return_queue: Arc<ThreadLocalQueue<TD>>,
         future: Fut,
-        pool: Pool,
         priority: Priority,
         queue_local_idx: usize,
     ) -> Arc<Self>
@@ -247,7 +241,6 @@ where
             return_queue,
             future_address: &*fut_box as *const _ as usize,
             future: unsafe { SenderSyncer::new(Mutex::new(StoredThreadLocalFuture::new(fut_box))) },
-            pool,
             priority,
             queue_local_idx,
         })
@@ -293,7 +286,6 @@ pub(crate) struct ThreadLocalWaker<TD> {
     pub shared: Arc<Shared<TD>>,
     pub return_queue: Arc<ThreadLocalQueue<TD>>,
     pub future_key: DefaultKey,
-    pub pool: Pool,
     pub priority: Priority,
     pub queue_local_idx: usize,
 }
@@ -311,7 +303,6 @@ impl<TD> ThreadLocalWaker<TD> {
                 shared: Arc::clone(&task.shared),
                 return_queue: Arc::clone(&task.return_queue),
                 future_key,
-                pool: task.pool,
                 priority: task.priority,
                 queue_local_idx: task.queue_local_idx,
             }),
@@ -333,7 +324,7 @@ impl<TD> Drop for ThreadLocalWaker<TD> {
 
 impl<TD> ArcWake for ThreadLocalWaker<TD> {
     fn wake_by_ref(arc_self: &Arc<Self>) {
-        let global_queue: &Queue<TD> = &arc_self.shared.queues[arc_self.pool as usize];
+        let global_queue: &Queue<TD> = &arc_self.shared.queue;
         let local_queue: &ThreadLocalQueue<TD> = &arc_self.return_queue;
 
         let mut waiting_lock = local_queue.waiting.lock();
