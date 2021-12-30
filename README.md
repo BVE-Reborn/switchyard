@@ -11,14 +11,14 @@ Real-time compute-focused async executor with job pools, thread-local data, and 
 
 ```rust
 use switchyard::Switchyard;
-use switchyard::threads::{thread_info, single_pool_one_to_one};
-// Create a new switchyard with one job pool and empty thread local data
-let yard = Switchyard::new(1, single_pool_one_to_one(thread_info(), Some("thread-name")), ||()).unwrap();
+use switchyard::threads::{thread_info, one_to_one};
+// Create a new switchyard without thread local data
+let yard = Switchyard::new(one_to_one(thread_info(), Some("thread-name")), ||()).unwrap();
 
-// Spawn a task on pool 0 and priority 10 and get a JoinHandle
-let handle = yard.spawn(0, 10, async move { 5 + 5 });
-// Spawn a lower priority task on the same pool
-let handle2 = yard.spawn(0, 0, async move { 2 + 2 });
+// Spawn a task on priority 10 and get a JoinHandle
+let handle = yard.spawn(10, async move { 5 + 5 });
+// Spawn a lower priority task
+let handle2 = yard.spawn(0, async move { 2 + 2 });
 
 // Wait on the results
 assert_eq!(handle.await + handle2.await, 14);
@@ -36,25 +36,9 @@ Each task has a priority and tasks are ran in order from high priority to low pr
 
 ```rust
 // Spawn task with lowest priority.
-yard.spawn(0, 0, async move { /* ... */ });
+yard.spawn(0, async move { /* ... */ });
 // Spawn task with higher priority. If both tasks are waiting, this one will run first.
-yard.spawn(0, 10, async move { /* ... */ });
-```
-
-### Job Pools
-
-Inside each yard there can be multiple (up to [`MAX_POOLS`]) different "job pools". Each thread in
-the pool is dedicated to a single pool. By having multiple pools, it can help prevent executor
-exhaustion.
-
-```rust
-// Create a yard with two job pools. Each logical core gets two threads, one per pool.
-let yard = Switchyard::new(2, double_pool_two_to_one(thread_info(), Some("thread-name")), ||()).unwrap();
-
-// Spawn task on pool 0.
-yard.spawn(0, 0, async move { /* ... */ });
-// Spawn task on pool 1.
-yard.spawn(1, 0, async move { /* ... */ });
+yard.spawn(10, async move { /* ... */ });
 ```
 
 ### Thread Local Data
@@ -68,10 +52,10 @@ a vector of mutable references to all thread's data. See it's documentation for 
 
 ```rust
 // Create yard with thread local data. The data is !Sync.
-let yard = Switchyard::new(1, single_pool_one_to_one(thread_info(), Some("thread-name")), || Cell::new(42)).unwrap();
+let yard = Switchyard::new(one_to_one(thread_info(), Some("thread-name")), || Cell::new(42)).unwrap();
 
 // Spawn task that uses thread local data. Each running thread will get their own copy.
-yard.spawn_local(0, 0, |data| async move { data.set(10) });
+yard.spawn_local(0, |data| async move { data.set(10) });
 ```
 
 ## MSRV

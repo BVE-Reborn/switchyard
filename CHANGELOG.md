@@ -14,6 +14,9 @@ and this project adheres to cargo's version of [Semantic Versioning](https://sem
 
 ## Unreleased
 
+#### Removed
+- Support for multiple pools. Instead, use multiple `Switchyard`s.
+
 ## v0.2.1
 
 Released 2021-04-09
