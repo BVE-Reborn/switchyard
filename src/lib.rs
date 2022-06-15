@@ -568,9 +568,9 @@ impl<TD: 'static> Switchyard<TD> {
         //  - We know there are no threads running because `count` is zero and we have an exclusive reference to the yard.
         //  - Threads do not keep references to their `Arc`'s around while idle, nor hand them to tasks.
         //  - `TD` is allowed to be `!Sync` because we never actually touch a `&TD`, only `&mut TD`.
-        let arcs: Vec<&mut Arc<TD>> = self.thread_local_data.iter().map(|&ptr| unsafe { &mut *ptr }).collect();
+        let arcs = self.thread_local_data.iter().map(|&ptr| unsafe { &mut *ptr });
 
-        let data: Option<Vec<&mut TD>> = arcs.into_iter().map(|arc| Arc::get_mut(arc)).collect();
+        let data: Option<Vec<&mut TD>> = arcs.map(|arc| Arc::get_mut(arc)).collect();
 
         data
     }

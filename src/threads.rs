@@ -53,6 +53,7 @@ pub fn single_thread(
 /// - Each thread assigned to a different core.
 ///
 /// `input` is the result of calling [`thread_info`].
+#[allow(clippy::needless_lifetimes)]
 pub fn one_to_one<'a>(
     input: ThreadAllocationInput,
     thread_name: Option<&'a str>,
@@ -71,6 +72,7 @@ pub fn one_to_one<'a>(
 /// - Each set of two threads assigned to a different core.
 ///
 /// `input` is the result of calling [`thread_info`].
+#[allow(clippy::needless_lifetimes)]
 pub fn two_to_one<'a>(
     input: ThreadAllocationInput,
     thread_name: Option<&'a str>,

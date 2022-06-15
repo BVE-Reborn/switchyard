@@ -6,6 +6,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 and this project adheres to cargo's version of [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - [Unreleased](#unreleased)
+- [v0.3.0](#v030)
 - [v0.2.1](#v021)
 - [v0.2.0](#v020)
 - [v0.1.1](#v011)
@@ -14,7 +15,12 @@ and this project adheres to cargo's version of [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.3.0
+
+Released 2022-06-14
+
 #### Removed
+
 - Support for multiple pools. Instead, use multiple `Switchyard`s.
 
 ## v0.2.1
@@ -22,6 +28,7 @@ and this project adheres to cargo's version of [Semantic Versioning](https://sem
 Released 2021-04-09
 
 #### Updated
+
 - Updated `arrayvec` to `0.7`
 
 ## v0.2.0
@@ -29,9 +36,11 @@ Released 2021-04-09
 Released 2021-03-28
 
 #### Added
+
 - MSRV of 1.51
 
 #### Updated
+
 - Updated `arrayvec` to `0.6`
 - Updated `flume` to `0.10`
 - Updated `slotmap` to `1.0`
@@ -41,6 +50,7 @@ Released 2021-03-28
 Released 2020-11-21
 
 #### Updated
+
 - Updated `parking_lot` to `0.11`
 - Updated `futures-intrusive` to `0.4`
 
@@ -49,11 +59,13 @@ Released 2020-11-21
 Released 2020-10-02
 
 #### Added
+
 - First release of `switchyard`.
 
 ## Diffs
 
-- [Unreleased](https://github.com/BVE-Reborn/switchyard/compare/v0.2.1...HEAD)
+- [Unreleased](https://github.com/BVE-Reborn/switchyard/compare/v0.3.0...HEAD)
+- [v0.3.0](https://github.com/BVE-Reborn/switchyard/compare/v0.2.1...v0.3.0)
 - [v0.2.1](https://github.com/BVE-Reborn/switchyard/compare/v0.2.0...v0.2.1)
 - [v0.2.0](https://github.com/BVE-Reborn/switchyard/compare/v0.1.1...v0.2.0)
 - [v0.1.1](https://github.com/BVE-Reborn/switchyard/compare/v0.1.0...v0.1.1)

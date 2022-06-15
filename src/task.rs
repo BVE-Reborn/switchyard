@@ -7,7 +7,7 @@ use std::{
     hash::{Hash, Hasher},
     pin::Pin,
     sync::{atomic::Ordering, Arc},
-    task::{Context, Poll},
+    task::Context,
 };
 
 #[allow(clippy::type_complexity)]
@@ -120,7 +120,7 @@ where
 
         let poll_value = guard.inner.as_mut().poll(&mut ctx);
 
-        if let Poll::Ready(_) = poll_value {
+        if poll_value.is_ready() {
             // Removing from the waiting queue is often enough, but if the task
             // is re-awoken _during_ the call to poll which returns Ready(T), we
             // still need to prevent it from running again
@@ -151,7 +151,7 @@ impl<TD> Waker<TD> {
         let queue: &Queue<TD> = &task.shared.queue;
 
         let mut waiting_lock = queue.waiting.lock();
-        let future_key = waiting_lock.insert(Arc::clone(&task));
+        let future_key = waiting_lock.insert(Arc::clone(task));
         drop(waiting_lock);
 
         (
@@ -262,7 +262,7 @@ where
 
         let poll_value = guard.inner.as_mut().poll(&mut ctx);
 
-        if let Poll::Ready(_) = poll_value {
+        if poll_value.is_ready() {
             // Removing from the waiting queue is often enough, but if the task
             // is re-awoken _during_ the call to poll which returns Ready(T), we
             // still need to prevent it from running again
@@ -295,7 +295,7 @@ impl<TD> ThreadLocalWaker<TD> {
         let queue: &ThreadLocalQueue<TD> = &task.return_queue;
 
         let mut waiting_lock = queue.waiting.lock();
-        let future_key = waiting_lock.insert(Arc::clone(&task));
+        let future_key = waiting_lock.insert(Arc::clone(task));
         drop(waiting_lock);
 
         (
