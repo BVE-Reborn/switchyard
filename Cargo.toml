@@ -28,7 +28,7 @@ affinity = "0.1"
 
 [dev-dependencies]
 async-std = "1.6"
-criterion = "0.3"
+criterion = "0.4"
 flume = "0.10"
 futures-executor = "0.3"
 
