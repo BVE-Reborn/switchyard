@@ -15,7 +15,7 @@ name = "scheduling"
 harness = false
 
 [dependencies]
-bitflags = "1"
+bitflags = "2"
 futures-intrusive = "0.4"
 futures-task = "0.3"
 num_cpus = "1"
