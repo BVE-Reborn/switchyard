@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
-use switchyard::threads;
+use switchyard::threads::{one_to_one, thread_info};
 
 pub fn wide(c: &mut Criterion) {
     let mut group = c.benchmark_group("wide");
@@ -32,8 +32,7 @@ pub fn wide(c: &mut Criterion) {
     });
 
     let yard = switchyard::Switchyard::new(
-        1,
-        threads::single_pool_one_to_one(threads::thread_info(), Some("switchyard")),
+        one_to_one(thread_info(), Some("thread-name")),
         || (),
     )
     .unwrap();
@@ -42,7 +41,7 @@ pub fn wide(c: &mut Criterion) {
         b.iter_batched(
             future_creation,
             |input| {
-                let handle_vec: Vec<_> = input.into_iter().map(|fut| yard.spawn(0, 0, fut)).collect();
+                let handle_vec: Vec<_> = input.into_iter().map(|fut| yard.spawn(0, fut)).collect();
                 futures_executor::block_on(async move {
                     for handle in handle_vec {
                         handle.await;
@@ -89,8 +88,7 @@ pub fn chain(c: &mut Criterion) {
     });
 
     let yard = switchyard::Switchyard::new(
-        1,
-        threads::single_pool_one_to_one(threads::thread_info(), Some("switchyard")),
+        one_to_one(thread_info(), Some("switchyard")),
         || (),
     )
     .unwrap();
@@ -99,12 +97,12 @@ pub fn chain(c: &mut Criterion) {
         b.iter_batched(
             || {
                 let receiver = receiver.clone();
-                let mut head = yard.spawn(0, 0, async move {
+                let mut head = yard.spawn(0, async move {
                     receiver.recv_async().await.unwrap();
                 });
                 for _ in 0..count {
                     let old_head = head;
-                    head = yard.spawn(0, 0, async move {
+                    head = yard.spawn(0, async move {
                         old_head.await;
                     });
                 }
