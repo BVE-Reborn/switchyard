@@ -7,24 +7,6 @@ use std::{
 };
 use switchyard::{threads::single_thread, Switchyard};
 
-#[test]
-fn held_thread_local_data() {
-    let mut yard = Switchyard::new(single_thread(None, None), || ()).unwrap();
-
-    let (sender, receiver) = flume::unbounded();
-    yard.spawn_local(0, |arc| async move {
-        sender.send(arc).unwrap();
-    });
-
-    let arc = receiver.recv().unwrap();
-
-    futures_executor::block_on(yard.wait_for_idle());
-
-    assert_eq!(yard.access_per_thread_data(), None);
-
-    drop(arc)
-}
-
 struct ImmediateWake;
 impl Future for ImmediateWake {
     type Output = ();
