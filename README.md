@@ -56,7 +56,7 @@ yard.spawn_local(0, |data| async move { data.set(10) });
 ```
 
 ## MSRV
-1.51
+1.63
 
 Future MSRV bumps will be breaking changes.
 

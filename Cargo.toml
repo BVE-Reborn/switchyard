@@ -9,6 +9,7 @@ repository = "https://github.com/BVE-Reborn/switchyard"
 license = "MIT OR Apache-2.0 OR Zlib"
 keywords = []
 categories = []
+rust-version = "1.63"
 
 [[bench]]
 name = "scheduling"
@@ -17,8 +18,8 @@ harness = false
 [dependencies]
 bitflags = "1"
 futures-intrusive = "0.4"
-futures-task = "0.3"
-num_cpus = "1"
+futures-task = "0.3.31"
+num_cpus = "1.12"
 parking_lot = "0.11"
 priority-queue = "1"
 slotmap = "1.0"

@@ -31,11 +31,7 @@ pub fn wide(c: &mut Criterion) {
         )
     });
 
-    let yard = switchyard::Switchyard::new(
-        one_to_one(thread_info(), Some("thread-name")),
-        || (),
-    )
-    .unwrap();
+    let yard = switchyard::Switchyard::new(one_to_one(thread_info(), Some("thread-name")), || ()).unwrap();
 
     group.bench_function("switchyard", |b| {
         b.iter_batched(
@@ -87,11 +83,7 @@ pub fn chain(c: &mut Criterion) {
         )
     });
 
-    let yard = switchyard::Switchyard::new(
-        one_to_one(thread_info(), Some("switchyard")),
-        || (),
-    )
-    .unwrap();
+    let yard = switchyard::Switchyard::new(one_to_one(thread_info(), Some("switchyard")), || ()).unwrap();
 
     group.bench_function("switchyard", |b| {
         b.iter_batched(

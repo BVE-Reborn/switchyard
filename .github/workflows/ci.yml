@@ -4,52 +4,88 @@ on:
   push:
   pull_request:
 
+env:
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+  CI_RUST_VERSION: "1.85"
+  MSRV: "1.63"
+
 jobs:
   build:
     timeout-minutes: 5
 
     strategy:
       matrix:
-        rust_version: [stable, "1.51"]
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        include:
+          # wasm stable
+          - name: "stable wasm"
+            os: "ubuntu-latest"
+            target: "wasm32-unknown-unknown"
+
+          # native stable
+          - name: "stable linux"
+            os: "ubuntu-latest"
+            target: "x86_64-unknown-linux-gnu"
+
+          - name: "stable mac"
+            os: "macos-latest"
+            target: "x86_64-apple-darwin"
+
+          - name: "stable windows"
+            os: "windows-latest"
+            target: "x86_64-pc-windows-msvc"
+
       fail-fast: false
+
     runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
 
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
 
-    - name: Set up Rust toolchain
-      id: setup-rust
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: ${{ matrix.rust_version }}
-        components: rustfmt, clippy
-        default: true
-        override: true
+      - name: install rust
+        shell: bash
+        run: |
+          set -e
 
-    - uses: actions/cache@v2
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ matrix.os }}-${{ steps.setup-rust.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ matrix.os }}-${{ steps.setup-rust.outputs.rustc_hash }}
+          rustup toolchain install ${{ env.CI_RUST_VERSION }} --no-self-update --profile=minimal --component clippy
+          rustup override set ${{ env.CI_RUST_VERSION }}
+          rustup target add ${{ matrix.target }}
+          cargo -V
 
-    - uses: actions-rs/cargo@v1
-      with:
-        command: build
+      - uses: Swatinem/rust-cache@v2
 
-    - uses: actions-rs/cargo@v1
-      with:
-        command: test
+      - name: clippy
+        shell: bash
+        run: cargo clippy --all-features --target ${{ matrix.target }}
 
-    - uses: actions-rs/cargo@v1
-      with:
-        command: clippy
-      if: matrix.rust_version == 'stable'
+      - name: test
+        shell: bash
+        if: matrix.name != 'stable wasm'
+        run: cargo test --all-features --target ${{ matrix.target }}
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: install rust
+        run: |
+          set -e
+
+          rustup toolchain install ${{ env.MSRV }} --no-self-update --profile=minimal
+          rustup override set ${{ env.MSRV }}
+          cargo -V
+
+      - name: check msrv
+        run: |
+          set -e
+
+          cargo check
+          cargo check --no-default-features
 
   cargo-fmt:
     runs-on: ubuntu-latest
