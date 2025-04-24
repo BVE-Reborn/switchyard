@@ -1,28 +1,13 @@
 [licenses]
-unlicensed = "deny"
-allow-osi-fsf-free = "either"
-allow = [
-    "Apache-2.0",
-    "BSL-1.0",
-    "LGPL-3.0",
-    "MIT",
-    "MPL-2.0",
-    "Unlicense",
-]
+allow = ["Apache-2.0", "LGPL-3.0", "MIT", "MPL-2.0", "Zlib"]
 
 [bans]
 multiple-versions = "deny"
-skip = [
-    # csv via criterion
-    { name = "itoa", version = "0.4.8" },
-]
+skip = []
 
 [advisories]
-vulnerability = "deny"
-unmaintained = "deny"
-ignore = [
-    "RUSTSEC-2021-0127" # serde-cbor from criterion
-]
+unmaintained = "all"
+ignore = []
 
 [sources]
 unknown-registry = "deny"

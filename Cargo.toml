@@ -16,12 +16,11 @@ name = "scheduling"
 harness = false
 
 [dependencies]
-bitflags = "1"
-futures-intrusive = "0.4"
+futures-intrusive = "0.5"
 futures-task = "0.3.31"
 num_cpus = "1.12"
-parking_lot = "0.11"
-priority-queue = "1"
+parking_lot = "0.12"
+priority-queue = "2"
 slotmap = "1.0"
 
 [target.'cfg(any(target_os = "windows", target_os = "linux"))'.dependencies]
@@ -29,8 +28,8 @@ affinity = "0.1"
 
 [dev-dependencies]
 async-std = "1.6"
-criterion = "0.3"
-flume = "0.10"
+criterion = "0.5"
+flume = "0.11"
 futures-executor = "0.3"
 
 [profile.bench]
