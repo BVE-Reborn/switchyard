@@ -14,7 +14,7 @@ env:
   RUSTFLAGS: -D warnings
   RUSTDOCFLAGS: -D warnings
   CI_RUST_VERSION: "1.85"
-  MSRV: "1.63"
+  MSRV: "1.65"
 
 jobs:
   build:
@@ -110,7 +110,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v1
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           log-level: warn
           command: check
