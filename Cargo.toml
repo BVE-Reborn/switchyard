@@ -15,12 +15,12 @@ name = "scheduling"
 harness = false
 
 [dependencies]
-bitflags = "1"
-futures-intrusive = "0.4"
+bitflags = "2.9"
+futures-intrusive = "0.5"
 futures-task = "0.3"
 num_cpus = "1"
-parking_lot = "0.11"
-priority-queue = "1"
+parking_lot = "0.12.3"
+priority-queue = "2.3.1"
 slotmap = "1.0"
 
 [target.'cfg(any(target_os = "windows", target_os = "linux"))'.dependencies]
