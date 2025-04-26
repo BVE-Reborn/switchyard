@@ -17,14 +17,14 @@ harness = false
 
 [dependencies]
 futures-intrusive = "0.5"
-futures-task = "0.3.31"
-num_cpus = "1.12"
+futures-task = "0.3"
+num_cpus = "1"
 parking_lot = "0.12"
 priority-queue = "2"
-slotmap = "1.0"
+slotmap = "1"
 
 [target.'cfg(any(target_os = "windows", target_os = "linux"))'.dependencies]
-affinity = "0.1"
+affinity = "0.1.2"
 
 [dev-dependencies]
 async-std = "1.6"
