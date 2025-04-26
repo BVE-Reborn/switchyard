@@ -15,6 +15,12 @@ and this project adheres to cargo's version of [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.3.1
+
+#### Changes
+
+- Updated dependencies.
+
 #### Removed
 
 - Removed `Switchyard::access_per_thread_data`, which was unsound.
