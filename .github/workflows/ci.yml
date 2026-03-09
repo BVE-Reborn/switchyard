@@ -84,16 +84,25 @@ jobs:
         run: |
           set -e
 
+          rustup toolchain install ${{ env.CI_RUST_VERSION }} --no-self-update --profile=minimal
           rustup toolchain install ${{ env.MSRV }} --no-self-update --profile=minimal
-          rustup override set ${{ env.MSRV }}
-          cargo -V
+
+      - name: generate MSRV-compatible lockfile
+        run: |
+          # Use the MSRV-aware resolver (Cargo 1.84+) to prefer dependency
+          # versions compatible with our declared rust-version
+          mkdir -p .cargo
+          printf '[resolver]\nincompatible-rust-versions = "fallback"\n' > .cargo/config.toml
+          cargo +${{ env.CI_RUST_VERSION }} generate-lockfile
+          rm .cargo/config.toml
+          rmdir .cargo 2>/dev/null || true
 
       - name: check msrv
         run: |
           set -e
 
-          cargo hack check --no-dev-deps
-          cargo hack check --no-dev-deps --no-default-features
+          cargo +${{ env.MSRV }} hack check --no-dev-deps --locked
+          cargo +${{ env.MSRV }} hack check --no-dev-deps --no-default-features --locked
 
   cargo-fmt:
     runs-on: ubuntu-latest
