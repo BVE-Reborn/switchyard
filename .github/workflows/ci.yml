@@ -78,6 +78,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: taiki-e/install-action@cargo-hack
+
       - name: install rust
         run: |
           set -e
@@ -90,8 +92,8 @@ jobs:
         run: |
           set -e
 
-          cargo check
-          cargo check --no-default-features
+          cargo hack check --no-dev-deps
+          cargo hack check --no-dev-deps --no-default-features
 
   cargo-fmt:
     runs-on: ubuntu-latest
