@@ -16,14 +16,16 @@ pub fn wide(c: &mut Criterion) {
 
     group.throughput(Throughput::Elements(count as u64));
 
-    group.bench_function("async-std", |b| {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    group.bench_function("tokio", |b| {
         b.iter_batched(
             future_creation,
             |input| {
-                let handle_vec: Vec<_> = input.into_iter().map(|fut| async_std::task::spawn(fut)).collect();
-                futures_executor::block_on(async move {
+                rt.block_on(async {
+                    let handle_vec: Vec<_> = input.into_iter().map(|fut| tokio::spawn(fut)).collect();
                     for handle in handle_vec {
-                        handle.await;
+                        handle.await.unwrap();
                     }
                 })
             },
@@ -60,24 +62,28 @@ pub fn chain(c: &mut Criterion) {
 
     group.throughput(Throughput::Elements(count as u64));
 
-    group.bench_function("async-std", |b| {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    group.bench_function("tokio", |b| {
         b.iter_batched(
             || {
+                // Establish tokio runtime context so tokio::spawn works outside block_on
+                let _guard = rt.enter();
                 let receiver = receiver.clone();
-                let mut head = async_std::task::spawn(async move {
+                let mut head = tokio::spawn(async move {
                     receiver.recv_async().await.unwrap();
                 });
                 for _ in 0..count {
                     let old_head = head;
-                    head = async_std::task::spawn(async move {
-                        old_head.await;
+                    head = tokio::spawn(async move {
+                        old_head.await.unwrap();
                     });
                 }
                 head
             },
             |input| {
                 sender.send(()).unwrap();
-                futures_executor::block_on(input)
+                rt.block_on(async { input.await.unwrap() })
             },
             BatchSize::PerIteration,
         )
