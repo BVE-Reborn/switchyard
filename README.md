@@ -55,8 +55,7 @@ let yard = Switchyard::new(one_to_one(thread_info(), Some("thread-name")), || Ce
 yard.spawn_local(0, |data| async move { data.set(10) });
 ```
 
-## MSRV
-1.65
+## MSRV71
 
 Future MSRV bumps will be breaking changes.
 

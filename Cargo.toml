@@ -9,7 +9,7 @@ repository = "https://github.com/BVE-Reborn/switchyard"
 license = "MIT OR Apache-2.0 OR Zlib"
 keywords = []
 categories = []
-rust-version = "1.65"
+rust-version = "1.71"
 
 [[bench]]
 name = "scheduling"

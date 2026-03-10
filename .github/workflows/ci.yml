@@ -9,7 +9,7 @@ env:
   RUSTFLAGS: -D warnings
   RUSTDOCFLAGS: -D warnings
   CI_RUST_VERSION: "1.85"
-  MSRV: "1.65"
+  MSRV: "1.71"
 
 jobs:
   build:
@@ -44,6 +44,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
       - name: install rust
         shell: bash
         run: |
@@ -63,7 +66,7 @@ jobs:
       - name: test
         shell: bash
         if: matrix.name != 'stable wasm'
-        run: cargo test --all-features --target ${{ matrix.target }}
+        run: cargo nextest run --all-features --target ${{ matrix.target }}
 
   msrv:
     runs-on: ubuntu-latest
@@ -77,11 +80,16 @@ jobs:
         run: |
           set -e
 
-          rustup toolchain install stable --no-self-update --profile=minimal
           rustup toolchain install ${{ env.MSRV }} --no-self-update --profile=minimal
-          cargo +stable generate-lockfile
           rustup override set ${{ env.MSRV }}
           cargo -V
+
+      - name: downgrade dependencies
+        run: |
+          set -e
+
+          # 2.12.0 bumps MSRV to 1.82.
+          cargo update -p indexmap --precise 2.11.0
 
       - name: check msrv
         run: |
