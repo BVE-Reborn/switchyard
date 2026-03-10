@@ -82,7 +82,9 @@ jobs:
         run: |
           set -e
 
+          rustup toolchain install stable --no-self-update --profile=minimal
           rustup toolchain install ${{ env.MSRV }} --no-self-update --profile=minimal
+          cargo +stable generate-lockfile
           rustup override set ${{ env.MSRV }}
           cargo -V
 

@@ -27,7 +27,7 @@ slotmap = "1"
 affinity = "0.1.2"
 
 [dev-dependencies]
-async-std = "1.6"
+tokio = { version = "1", features = ["rt-multi-thread"] }
 criterion = "0.6"
 flume = "0.11"
 futures-executor = "0.3"
