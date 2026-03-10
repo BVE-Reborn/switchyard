@@ -1,6 +1,6 @@
 # switchyard
 
-![GitHub Workflow Status](https://img.shields.io/github/workflow/status/BVE-Reborn/switchyard/CI)
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/BVE-Reborn/switchyard/ci.yml?branch=trunk)
 [![Crates.io](https://img.shields.io/crates/v/switchyard)](https://crates.io/crates/switchyard)
 [![Documentation](https://docs.rs/switchyard/badge.svg)](https://docs.rs/switchyard)
 ![License](https://img.shields.io/crates/l/switchyard)
@@ -55,7 +55,8 @@ let yard = Switchyard::new(one_to_one(thread_info(), Some("thread-name")), || Ce
 yard.spawn_local(0, |data| async move { data.set(10) });
 ```
 
-## MSRV71
+## MSRV
+1.71
 
 Future MSRV bumps will be breaking changes.
 

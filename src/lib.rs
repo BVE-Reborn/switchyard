@@ -5,12 +5,12 @@
 //! ```rust
 //! use switchyard::Switchyard;
 //! use switchyard::threads::{thread_info, one_to_one};
-//! // Create a new switchyard with one job pool and empty thread local data
+//! // Create a new switchyard without thread local data
 //! let yard = Switchyard::new(one_to_one(thread_info(), Some("thread-name")), ||()).unwrap();
 //!
-//! // Spawn a task on pool 0 and priority 10 and get a JoinHandle
+//! // Spawn a task on priority 10 and get a JoinHandle
 //! let handle = yard.spawn(10, async move { 5 + 5 });
-//! // Spawn a lower priority task on the same pool
+//! // Spawn a lower priority task
 //! let handle2 = yard.spawn(0, async move { 2 + 2 });
 //!
 //! // Wait on the results
@@ -55,7 +55,7 @@
 //! ```
 //!
 //! # MSRV
-//! 1.51
+//! 1.71
 //!
 //! Future MSRV bumps will be breaking changes.
 
