@@ -2,12 +2,7 @@ name: CI
 
 on:
   push:
-    branches-ignore: [
-        # We don't need to run on renovate PRs.
-        "renovate/**",
-        # This is the branch the merge queue creates.
-        "gh-readonly-queue/**",
-      ]
+    branches: [trunk]
   pull_request:
 
 env:
