@@ -28,7 +28,7 @@ affinity = "0.1.2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread"] }
-criterion = "0.6"
+criterion = "0.8"
 flume = "0.12"
 futures-executor = "0.3"
 
