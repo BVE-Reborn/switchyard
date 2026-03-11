@@ -1,14 +1,18 @@
 [licenses]
-allow = ["Apache-2.0", "LGPL-3.0", "MIT", "MPL-2.0", "Zlib"]
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "MPL-2.0",
+    "Zlib",
+]
 
 [bans]
 multiple-versions = "deny"
 skip = []
 
-[advisories]
-unmaintained = "all"
-ignore = []
-
 [sources]
 unknown-registry = "deny"
 unknown-git = "allow"
+
+[advisories]
+ignore = []

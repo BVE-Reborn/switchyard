@@ -7,8 +7,8 @@ description = "Real-time compute focused async executor"
 readme = "README.md"
 repository = "https://github.com/BVE-Reborn/switchyard"
 license = "MIT OR Apache-2.0 OR Zlib"
-keywords = []
-categories = []
+keywords = ["async", "executor", "priority", "threadpool", "realtime"]
+categories = ["asynchronous", "concurrency"]
 rust-version = "1.71"
 
 [[bench]]

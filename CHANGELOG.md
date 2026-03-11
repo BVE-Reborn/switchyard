@@ -5,13 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to cargo's version of [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+Per Keep a Changelog there are 6 main categories of changes:
+- Added
+- Changed
+- Deprecated
+- Removed
+- Fixed
+- Security
+
+#### Table of Contents
+
 - [Unreleased](#unreleased)
+- [v0.3.1](#v031)
 - [v0.3.0](#v030)
 - [v0.2.1](#v021)
 - [v0.2.0](#v020)
 - [v0.1.1](#v011)
 - [v0.1.0](#v010)
-- [Diffs](#diffs)
 
 ## Unreleased
 
@@ -79,7 +89,8 @@ Released 2020-10-02
 
 ## Diffs
 
-- [Unreleased](https://github.com/BVE-Reborn/switchyard/compare/v0.3.0...HEAD)
+- [Unreleased](https://github.com/BVE-Reborn/switchyard/compare/v0.3.1...HEAD)
+- [v0.3.1](https://github.com/BVE-Reborn/switchyard/compare/v0.3.0...v0.3.1)
 - [v0.3.0](https://github.com/BVE-Reborn/switchyard/compare/v0.2.1...v0.3.0)
 - [v0.2.1](https://github.com/BVE-Reborn/switchyard/compare/v0.2.0...v0.2.1)
 - [v0.2.0](https://github.com/BVE-Reborn/switchyard/compare/v0.1.1...v0.2.0)
