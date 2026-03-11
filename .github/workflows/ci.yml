@@ -9,7 +9,7 @@ env:
   RUSTFLAGS: -D warnings
   RUSTDOCFLAGS: -D warnings
   CI_RUST_VERSION: "1.94"
-  MSRV: "1.71"
+  CI_RUST_MSRV: "1.71"
 
 jobs:
   build:
@@ -45,17 +45,13 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@nextest
+        uses: taiki-e/install-action@cargo-nextest
 
-      - name: install rust
-        shell: bash
-        run: |
-          set -e
-
-          rustup toolchain install ${{ env.CI_RUST_VERSION }} --no-self-update --profile=minimal --component clippy
-          rustup override set ${{ env.CI_RUST_VERSION }}
-          rustup target add ${{ matrix.target }}
-          cargo -V
+      - uses: cwfitzgerald/repo-common/.github/actions/install-rust@trunk
+        with:
+          version: ${{ env.CI_RUST_VERSION }}
+          components: clippy
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
 
@@ -63,26 +59,35 @@ jobs:
         shell: bash
         run: cargo clippy --all-features --target ${{ matrix.target }}
 
+      - name: doc
+        shell: bash
+        if: matrix.name != 'stable wasm'
+        run: cargo doc --no-deps --target ${{ matrix.target }}
+
       - name: test
         shell: bash
         if: matrix.name != 'stable wasm'
         run: cargo nextest run --all-features --target ${{ matrix.target }}
 
+      - name: doctest
+        shell: bash
+        if: matrix.name != 'stable wasm'
+        run: cargo test --doc --target ${{ matrix.target }}
+
   msrv:
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: ""
+      RUSTDOCFLAGS: ""
     steps:
       - name: checkout repo
         uses: actions/checkout@v6
 
+      - uses: cwfitzgerald/repo-common/.github/actions/install-rust@trunk
+        with:
+          version: ${{ env.CI_RUST_MSRV }}
+
       - uses: Swatinem/rust-cache@v2
-
-      - name: install rust
-        run: |
-          set -e
-
-          rustup toolchain install ${{ env.MSRV }} --no-self-update --profile=minimal
-          rustup override set ${{ env.MSRV }}
-          cargo -V
 
       - name: downgrade dependencies
         run: |
@@ -103,9 +108,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Rust toolchain
-        run: |
-          rustup component add rustfmt
+      - uses: cwfitzgerald/repo-common/.github/actions/install-rust@trunk
+        with:
+          version: ${{ env.CI_RUST_VERSION }}
+          components: rustfmt
 
       - name: Rustfmt
         run: |
