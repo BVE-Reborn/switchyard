@@ -19,7 +19,7 @@ harness = false
 futures-intrusive = "0.5"
 futures-task = "0.3"
 num_cpus = "1"
-parking_lot = "0.12"
+parking_lot = "0.13"
 priority-queue = "2"
 slotmap = "1"
 
